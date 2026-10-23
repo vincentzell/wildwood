@@ -246,7 +246,12 @@ describe("startup and accounts", () => {
     expect(lastNavigation(other)).toMatch(/^https:\/\/auth\.spacetimedb\.com\/oidc\/session\/end\?/);
     expect(other.localStorage.getItem(storageKeys.accountTokenKey)).toBeNull();
     other = await other.reload({ url: "https://wildstatmmo.com/" });
-    await other.play(1_000);
+    expect(
+      await other.until(
+        () => lastNavigation(other).startsWith("https://auth.spacetimedb.com/oidc/auth"),
+        10_000,
+      ),
+    ).toBe(true);
     const login = new URL(lastNavigation(other));
     expect(`${login.origin}${login.pathname}`).toBe("https://auth.spacetimedb.com/oidc/auth");
     expect(login.searchParams.get("prompt")).toBe("login");

@@ -125,7 +125,12 @@ describe("settings", () => {
     press(tab, tab.document.querySelector("[data-move-confirm]") as HTMLElement);
     expect(await tab.until(() => lastNavigation(tab).includes("/oidc/session/end"), 10_000)).toBe(true);
     tab = await tab.reload({ url: "https://wildstatmmo.com/" });
-    await tab.play(1_000);
+    expect(
+      await tab.until(
+        () => lastNavigation(tab).startsWith("https://auth.spacetimedb.com/oidc/auth"),
+        10_000,
+      ),
+    ).toBe(true);
     expect(new URL(lastNavigation(tab)).searchParams.get("prompt")).toBe("login");
 
     // The player picks Google: the character is now that login's.
@@ -331,4 +336,3 @@ describe("settings", () => {
     expect(audio(owner)).toBeTruthy();
   });
 });
-
