@@ -1,11 +1,10 @@
 // mods/farm-auto-prestige.ts
+import { BOSS_REWARD_CLAIM_BITS } from "../shared/rules";
 import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-auto-prestige-enabled";
 const CHECK_INTERVAL_MS = 2_000;
-const RETRY_COOLDOWN_MS = 5_000;
 
-/** Constantes du userscript WildPote — miroir côté client. */
 const PRESTIGE_FIRST_MAP = 15;
 const CAMPAIGN_LENGTH = 15;
 
@@ -15,6 +14,9 @@ type CoopLike = {
   prestige?: () => { level?: number } | null;
   prestigeChallenge?: () => { active?: boolean } | null;
   prestigeAccount?: () => Promise<PrestigeResult>;
+  savedProgress?: () => { bossRewardClaims?: number | null } | null;
+  proceduralCompleted?: () => number;
+  localState?: () => { mapId?: string } | null;
 };
 
 function getCoop(): CoopLike | null {
@@ -34,40 +36,49 @@ export function isAutoPrestigeEnabled(): boolean {
 }
 
 let inProgress = false;
-let lastAttemptTs = 0;
-let lastReportedLevel = -1;
 let intervalId: number | null = null;
 let warnedNoApi = false;
-let lastBlockReason = "";
-let lastActionResult = "";
 let currentLevel: number | null = null;
+let lastActionResult = "";
+let lastGoalKey = "";
+let lastRejectedFor = "";
+let lastSuccessfulFor = "";
+let mapAtLastAttempt = "";
 
 function log(msg: string): void {
   console.info(`[mod-auto-prestige] ${msg}`);
 }
 
-function logBlock(reason: string): void {
-  if (reason === lastBlockReason) return;
-  lastBlockReason = reason;
-  console.info(`[mod-auto-prestige] bloqué : ${reason}`);
-}
-
-function getPrestigeGoal(level: number | null): string {
+function getPrestigeGoal(level: number | null): { text: string; key: string } {
   const lvl = level ?? 0;
   const nextLevel = lvl + 1;
   const requiredMap = PRESTIGE_FIRST_MAP + Math.max(1, nextLevel) - 1;
   const endlessStage = Math.max(0, requiredMap - CAMPAIGN_LENGTH);
-  if (endlessStage > 0) return `Clear Endless ${endlessStage} boss (Warden ${endlessStage})`;
-  return "Defeat Aegis Prime";
+  if (endlessStage > 0) {
+    return {
+      text: `Clear Endless ${endlessStage} boss (Warden ${endlessStage})`,
+      key: `endless_${endlessStage}`,
+    };
+  }
+  return { text: "Defeat Aegis Prime", key: "prime" };
+}
+
+/** Reads the locally subscribed claim mask and Endless completion count. */
+function isGoalCompleted(coop: CoopLike, goalKey: string): boolean {
+  if (goalKey === "prime") {
+    const claims = coop.savedProgress?.()?.bossRewardClaims;
+    const aegisBit = BOSS_REWARD_CLAIM_BITS.aegisPrime;
+    return claims != null && (claims & aegisBit) === aegisBit;
+  }
+  if (goalKey.startsWith("endless_")) {
+    const stage = Number.parseInt(goalKey.slice("endless_".length), 10);
+    return Number.isFinite(stage) && (coop.proceduralCompleted?.() ?? 0) >= stage;
+  }
+  return false;
 }
 
 async function tryPrestige(): Promise<void> {
-  if (inProgress) return;
-  if (!isAutoPrestigeEnabled()) {
-    lastBlockReason = "";
-    return;
-  }
-  if (Date.now() - lastAttemptTs < RETRY_COOLDOWN_MS) return;
+  if (inProgress || !isAutoPrestigeEnabled()) return;
 
   const coop = getCoop();
   if (!coop) {
@@ -94,45 +105,63 @@ async function tryPrestige(): Promise<void> {
 
   if (coop.prestigeChallenge) {
     try {
-      const challenge = coop.prestigeChallenge();
-      if (challenge?.active) {
-        logBlock("prestigeChallenge actif");
-        return;
-      }
+      if (coop.prestigeChallenge()?.active) return;
     } catch {
-      // Challenge state is optional; the server decides whether prestige is allowed.
+      // The server remains authoritative if this optional state is unavailable.
     }
   }
 
+  const goal = getPrestigeGoal(currentLevel);
+  if (goal.key !== lastGoalKey) {
+    lastGoalKey = goal.key;
+    if (!lastRejectedFor) lastActionResult = "";
+  }
+
+  if (!isGoalCompleted(coop, goal.key)) return;
+  if (lastRejectedFor || lastSuccessfulFor === goal.key) return;
+
   inProgress = true;
-  lastBlockReason = "";
-  log("appel prestigeAccount()");
+  mapAtLastAttempt = coop.localState?.()?.mapId ?? "";
   try {
     const result = await coop.prestigeAccount();
-    lastAttemptTs = Date.now();
     if (result?.ok) {
       const level = typeof result.level === "number" ? result.level : -1;
+      lastSuccessfulFor = goal.key;
       lastActionResult = level >= 0 ? `Succès (niveau ${level})` : "Succès";
-      if (level !== lastReportedLevel) {
-        lastReportedLevel = level;
-        log(`prestige réussi${level >= 0 ? ` — niveau ${level}` : ""}`);
-      }
+      log(lastActionResult);
+    } else if (result?.error) {
+      lastRejectedFor = result.error;
+      lastActionResult = `Refus : ${result.error}`;
+      log(`${lastActionResult} — retry uniquement sur événement`);
     } else {
-      lastActionResult = result?.error ? `Refus : ${result.error}` : "Refus (sans message)";
+      lastRejectedFor = "refus sans message";
+      lastActionResult = "Refus (sans message)";
       log(lastActionResult);
     }
   } catch (e) {
-    lastAttemptTs = Date.now();
-    lastActionResult = `Exception : ${(e as Error).message}`;
+    lastRejectedFor = `exception : ${(e as Error).message}`;
+    lastActionResult = lastRejectedFor;
     log(lastActionResult);
   } finally {
     inProgress = false;
   }
 }
 
+function resetRejectionOnMapChange(): void {
+  if (!lastRejectedFor) return;
+  const coop = getCoop();
+  const currentMap = coop?.localState?.()?.mapId ?? "";
+  if (mapAtLastAttempt && currentMap && currentMap !== mapAtLastAttempt) {
+    log(`map changée (${mapAtLastAttempt} → ${currentMap}), reset refus`);
+    lastRejectedFor = "";
+    lastActionResult = "";
+  }
+}
+
 function startPolling(): void {
   if (intervalId !== null) return;
   intervalId = window.setInterval(() => {
+    resetRejectionOnMapChange();
     void tryPrestige();
   }, CHECK_INTERVAL_MS);
   void tryPrestige();
@@ -144,12 +173,14 @@ function stopPolling(): void {
     intervalId = null;
   }
   inProgress = false;
-  lastBlockReason = "";
 }
 
 function renderStatus(): HTMLElement {
   const wrap = document.createElement("div");
   const enabled = isAutoPrestigeEnabled();
+  const coop = getCoop();
+  const goal = getPrestigeGoal(currentLevel);
+  const completed = coop ? isGoalCompleted(coop, goal.key) : false;
 
   const line1 = document.createElement("div");
   line1.style.cssText = "display:flex;justify-content:space-between;gap:6px;margin-bottom:2px;";
@@ -157,28 +188,38 @@ function renderStatus(): HTMLElement {
   lvl.innerHTML = `<span style="opacity:.55">Niveau</span> <strong>${currentLevel ?? "—"}</strong>`;
   const status = document.createElement("span");
   status.style.opacity = ".75";
-  status.textContent = !enabled ? "Désactivé" : inProgress ? "Appel en cours…" : "Actif";
+  status.textContent = !enabled ? "Désactivé"
+    : inProgress ? "Appel…"
+    : completed ? (lastRejectedFor ? "Refusé" : "Prêt")
+    : "En attente";
   line1.append(lvl, status);
 
   const line2 = document.createElement("div");
   line2.style.cssText = "font-size:10px;opacity:.75;";
-  line2.textContent = `🎯 ${getPrestigeGoal(currentLevel)}`;
-
+  line2.textContent = `🎯 ${goal.text}${completed ? " ✓" : ""}`;
   wrap.append(line1, line2);
 
-  if (lastBlockReason) {
-    const line3 = document.createElement("div");
-    line3.style.cssText = "font-size:10px;color:#ffd85b;margin-top:2px;";
-    line3.textContent = `⏸ ${lastBlockReason}`;
-    wrap.append(line3);
-  }
+  if (!enabled) return wrap;
 
-  if (lastActionResult) {
-    const line4 = document.createElement("div");
-    line4.style.cssText = "font-size:10px;margin-top:2px;";
-    line4.style.color = lastActionResult.startsWith("Succès") ? "#69e56f" : "#ff6767";
-    line4.textContent = `▶ ${lastActionResult}`;
-    wrap.append(line4);
+  if (!completed) {
+    const line = document.createElement("div");
+    line.style.cssText = "font-size:10px;color:#ffd85b;margin-top:2px;";
+    line.textContent = "⏳ Objectif non complété";
+    wrap.append(line);
+  } else if (lastRejectedFor) {
+    const line = document.createElement("div");
+    line.style.cssText = "font-size:10px;color:#ff6767;margin-top:2px;";
+    line.textContent = `▶ ${lastActionResult}`;
+    wrap.append(line);
+    const hint = document.createElement("div");
+    hint.style.cssText = "font-size:9px;opacity:.55;margin-top:1px;";
+    hint.textContent = "Retry sur changement de map ou toggle off/on";
+    wrap.append(hint);
+  } else if (lastActionResult) {
+    const line = document.createElement("div");
+    line.style.cssText = "font-size:10px;color:#69e56f;margin-top:2px;";
+    line.textContent = `▶ ${lastActionResult}`;
+    wrap.append(line);
   }
 
   return wrap;
@@ -198,8 +239,13 @@ export function registerAutoPrestigeMod(): void {
         } catch {
           /* idem */
         }
-        if (value) startPolling();
-        else stopPolling();
+        if (value) {
+          lastRejectedFor = "";
+          lastActionResult = "";
+          startPolling();
+        } else {
+          stopPolling();
+        }
       },
     },
     status: { render: renderStatus, intervalMs: 1500 },
