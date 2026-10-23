@@ -22,6 +22,7 @@ mods/
 ├── index.ts                     # installAllMods() — point d'entrée unique
 ├── modmenu.ts                   # panneau flottant, onglets, cartes, switches
 ├── farm-auto-kiting.ts          # switch du mod Auto Kiting
+├── farm-auto-prestige.ts        # Auto Prestige
 ├── misc-auto-ad.ts              # Auto Ad (reward silencieuse)
 ├── misc-daily-gems.ts           # Auto Claim Daily Gems
 ├── farm/                        # copies moddées du runtime auto-farm
@@ -199,11 +200,16 @@ Le workflow `.github/workflows/pages.yml` se déclenche sur `push` vers
 `typecheck:server`, `build:client`, `test:unit` (4 shards), puis
 `deploy` (nécessite `needs: [..., test]`).
 
-Depuis une branche de travail, publier directement sur `main` :
+Workflow standard, une seule branche :
 
 ```bash
-git push origin <branche>:main
+git add mods/
+git commit -m "feat(mods): <description>"
+git push origin main
 ```
+
+Le workflow se déclenche, déploie, et le site
+`https://vincentzell.github.io/wildwood/` est à jour après ~3 minutes.
 
 Pour les tests : si le job `test` échoue sur des tests préexistants du
 fork (indépendants des mods), le job `deploy` sera bloqué. Vérifier
@@ -219,7 +225,8 @@ solution propre est de corriger ces tests, ou (à éviter) de patcher
 
 ## Conventions
 
-- **IDs** : `<categorie>-<nom>` en kebab-case (ex. `misc-auto-ad`).
+- **IDs** : `<categorie>-<nom>` en kebab-case (ex. `misc-auto-ad`,
+`farm-auto-prestige`).
 - **Clés localStorage** : préfixe `wildwood-mod-<id>-`. Ne jamais
   renommer une clé après première publication (les utilisateurs
   perdraient l'état de leur switch).
