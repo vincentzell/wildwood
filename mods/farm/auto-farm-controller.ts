@@ -176,6 +176,12 @@ export function createAutoFarmController(options: {
   rewardCapped?: (reward: FarmReward, soul: SoulStatId | null) => boolean;
   /** The gathering session: with it, the button runs Auto Mine in the Copper Hills and Auto Chop in Timberwood instead. */
   mining?: () => (AutoMineSource & AutoChopSource) | null | undefined;
+  /**
+   * Mode "farm boss répété" : quand true, ignore le verrou local
+   * bossBeaten() après un kill et re-déclenche la phase boss dès
+   * que le boss respawn. Utilisé par Auto Card.
+   */
+  repeatBoss?: () => boolean;
 }) {
   const { player, enemies, spawnSites } = options;
   const now = options.now ?? monotonicNowMs;
@@ -202,6 +208,7 @@ export function createAutoFarmController(options: {
   /** A boss beaten that left the way forward shut: not fought again on that map. */
   const opensNothing = new Set<string>();
   let bossWin: { mapId: string; at: number } | null = null;
+  let waitingForBossRespawn = false;
   /** The map whose boss it beat this visit: Move On then goes at once instead of finishing the fight around it. */
   let bossBeatenOn: string | null = null;
   let planClock = 0;
@@ -590,7 +597,8 @@ export function createAutoFarmController(options: {
       bossWin = null;
     }
     // Move On takes the boss in its way: there is no going on without it.
-    if (!advance || options.reflectOnly?.() || !boss || boss.dead || bossBeaten()) return false;
+    if (!advance || options.reflectOnly?.() || !boss || boss.dead) return false;
+    if (!options.repeatBoss?.() && bossBeaten()) return false;
     // A fight under way goes on until the boss or the player is down.
     if (phase === 'boss') return true;
     return currentPower() >= (bossRetryPower.get(mapId) ?? 0) && readyForBoss().ready && healthyToSetOff();
@@ -678,6 +686,7 @@ export function createAutoFarmController(options: {
   function stop(reason = 'Autofarm stopped') {
     pendingResume = null;
     travellingTo = null;
+    waitingForBossRespawn = false;
     phase = 'farm';
     playerBossFightOn = null;
     options.resumeStore?.clear();
@@ -803,8 +812,25 @@ export function createAutoFarmController(options: {
     noteBossWin();
     const portal = exitPortal();
     const afterBoss = bossBeatenOn === options.mapId();
+    // En mode repeatBoss, après un kill, on attend le respawn au
+    // lieu de Move On vers la map suivante.
+    if (options.repeatBoss?.() && afterBoss && advance) {
+      if (bossWanted()) { waitingForBossRespawn = false; phase = 'boss'; travellingTo = null; return; }
+      // Pas encore respawné : on attend sur place, en phase farm
+      // (mais sans cible : farmIdle).
+      if (phase !== 'farm') { target = null; route = []; lastGoal = null; routeClock = 0; holding = false; }
+      waitingForBossRespawn = true;
+      phase = 'farm';
+      return;
+    }
+    waitingForBossRespawn = false;
     // A trip under way, or one straight after a boss win, goes on whatever the health.
-    if (portal && !finishingFight(!afterBoss) && (phase === 'portal' || afterBoss || healthyToSetOff())) { phase = 'portal'; travellingTo = portal.destination; return; }
+    if (portal && !finishingFight(!afterBoss) && (phase === 'portal' || afterBoss || healthyToSetOff())) {
+      waitingForBossRespawn = false;
+      phase = 'portal';
+      travellingTo = portal.destination;
+      return;
+    }
     if (!portal) finishingFight(false);
     if (bossWanted()) { phase = 'boss'; travellingTo = null; return; }
     if (phase !== 'farm') { target = null; route = []; lastGoal = null; routeClock = 0; holding = false; }
@@ -897,6 +923,15 @@ export function createAutoFarmController(options: {
   }
 
   function movement(manual: Movement, dt: number): Movement {
+    if (waitingForBossRespawn) {
+      const boss = options.mapBoss?.();
+      if (!options.repeatBoss?.() || !advance || (boss && !boss.dead)) {
+        waitingForBossRespawn = false;
+      } else {
+        status = 'Waiting for boss respawn';
+        return idle();
+      }
+    }
     refresh();
     const gathered = mine?.movement(manual, dt) ?? chop?.movement(manual, dt);
     if (gathered) return gathered;
@@ -911,6 +946,7 @@ export function createAutoFarmController(options: {
     }
     if (!active || options.paused()) return manual;
     choosePhase(dt);
+    if (waitingForBossRespawn) return idle();
     // The server's move replaces Move On's walk.
     if (phase === 'portal' && options.serverMovePending?.()) {
       status = 'Moving On'; route = []; lastGoal = null; routeClock = 0; holding = true; target = null;

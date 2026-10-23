@@ -108,6 +108,11 @@ export function createAutoFarm(deps: AutoFarmWiringDeps) {
       if (boss && !boss.dead) obstacles.push({ x: boss.x, y: boss.y, r: boss.r + player.r + 40 });
       return obstacles;
     },
+    repeatBoss: () => {
+      try {
+        return localStorage.getItem("wildwood-mod-auto-card-boss-mode") === "true";
+      } catch { return false; }
+    },
     ...farmProgress,
   });
 
