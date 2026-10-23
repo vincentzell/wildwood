@@ -201,13 +201,6 @@ export function installModMenu(): void {
       "border-top:1px solid rgba(255,255,255,.1);" +
       "padding:4px 8px 6px;font-size:11px;";
 
-    if (mod.description) {
-      const desc = document.createElement("div");
-      desc.style.cssText = "opacity:.75;margin-bottom:4px;line-height:1.35;";
-      desc.textContent = mod.description;
-      cardBody.append(desc);
-    }
-
     let statusEl: HTMLElement | null = null;
     if (mod.status) {
       statusEl = document.createElement("div");
@@ -222,7 +215,7 @@ export function installModMenu(): void {
       cardBody.append(statusEl);
     }
 
-    const hasBody = Boolean(mod.description) || Boolean(mod.status);
+    const hasBody = Boolean(mod.status);
     let caret: HTMLSpanElement | null = null;
     if (hasBody) {
       caret = document.createElement("span");

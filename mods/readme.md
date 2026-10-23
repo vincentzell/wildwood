@@ -5,8 +5,45 @@ registre central et apparaît automatiquement dans le menu flottant
 (onglets **FARM / QUEST / CARD / MISC**), ancré dans `#hud` et calqué
 sur le style du stat tracker.
 
+## Contexte du fork
+
+Ce dépôt est le **fork personnel de Vincent Zell**, utilisé pour
+héberger des mods Wildwood via GitHub Pages
+(`https://vincentzell.github.io/wildwood/`).
+
+Les conventions du dépôt amont (`CONTRIBUTING.md`, workflows de
+release, « delivery reserved for Rymel », etc.) **ne s'appliquent
+pas à ce fork**. En particulier :
+
+- **Ne pas exécuter `npm run ship`** — c'est le wrapper de release
+  upstream (version bump, tag, publication). Il n'a aucune utilité
+  ici et pourrait déclencher des effets non désirés.
+- **Le déploiement de ce fork passe uniquement par
+  `git push origin main`**, qui déclenche
+  `.github/workflows/pages.yml`. Le workflow construit le client,
+  exécute les tests, et publie sur GitHub Pages.
+- **Toutes les modifications sont sur `main` directement.** Aucune
+  Pull Request n'est nécessaire pour publier un mod.
+
+### Note pour les assistants IA
+
+Si tu es une session Copilot ou équivalent, et que tu détectes un
+worktree avec une branche auto-créée (ex.
+`vincentzell-<mot aléatoire>`), c'est normal — mais le workflow
+attendu est :
+
+1. Travailler sur `main` directement, ou sur la branche auto-créée
+   puis `git push origin <branche>:main`.
+2. Ne pas exécuter `npm run ship`.
+3. Ne pas ouvrir de PR (le repo est un fork personnel, personne
+   d'autre ne review).
+4. Le contrôle qualité est fait localement par
+   `npm run typecheck:coop` + `npm run build:client` avant le
+   push, plus un test in-game quand c'est pertinent.
+
 ## Sommaire
 
+- [Contexte du fork](#contexte-du-fork)
 - [Structure](#structure)
 - [Ajouter un mod](#ajouter-un-mod)
 - [Patch à re-appliquer après un sync upstream](#patch-à-re-appliquer-après-un-sync-upstream)

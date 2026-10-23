@@ -68,7 +68,7 @@ function stopPolling(): void {
 export function registerAutoAdMod(): void {
   REGISTERED_MODS.push({
     id: "misc-auto-ad",
-    name: "Auto Ad (reward silencieuse)",
+    name: "Auto Ad",
     category: "MISC",
     switch: {
       label: "On",
