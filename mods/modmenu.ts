@@ -10,6 +10,11 @@ const CARD_COLLAPSED_PREFIX = "wildwood-mod-modmenu-card-";
 
 const CATEGORIES: readonly ModCategory[] = ["FARM", "QUEST", "CARD", "MISC"];
 
+/**
+ * Menu flottant des mods, avec onglets par catégorie et une carte repliable
+ * par mod. Rejoue la mécanique du stat tracker : classe `.stat-tracker`,
+ * ancré dans `#hud`, déplaçable via `installMovableHudCard`.
+ */
 export function installModMenu(): void {
   if (document.getElementById(MOD_MENU_ID)) return;
 
@@ -30,6 +35,7 @@ export function installModMenu(): void {
   handle.className = "stat-tracker-handle";
   header.append(handle);
 
+  // Barre d'onglets
   const tabsBar = document.createElement("nav");
   tabsBar.setAttribute("role", "tablist");
   Object.assign(tabsBar.style, {
@@ -39,6 +45,7 @@ export function installModMenu(): void {
     borderBottom: "1px solid rgba(255,255,255,.1)",
   });
 
+  // Zone de contenu (cartes des mods actifs de l'onglet courant)
   const content = document.createElement("div");
   content.style.padding = "6px 8px";
 
@@ -141,6 +148,7 @@ export function installModMenu(): void {
       checkbox.type = "checkbox";
       checkbox.checked = sw.get();
       checkbox.addEventListener("change", () => sw.set(checkbox.checked));
+      // Évite que le clic sur le switch replie la carte.
       label.addEventListener("click", (e) => e.stopPropagation());
       label.append(checkbox, document.createTextNode(sw.label));
       cardHeader.append(cardTitle, label);

@@ -1,3 +1,4 @@
+// mods/farm-auto-dodge.ts
 import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-auto-dodge-enabled";
@@ -26,6 +27,7 @@ export function registerFarmAutoDodgeMod(): void {
         } catch {
           /* idem */
         }
+        // Le consommateur lit isAutoDodgeEnabled() à chaque tick : rien à pousser.
       },
     },
   });
