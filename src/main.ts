@@ -40,7 +40,8 @@ import { createCoopAccess } from "./game/runtime/coop-access";
 import { createTownRuntimes } from "./game/runtime/town-runtimes";
 import { createCoopSessionWiring } from "./game/runtime/coop-session-wiring";
 import { createPlayerCombat } from "./game/runtime/player-combat-wiring";
-import { createAutoFarm } from "./game/runtime/auto-farm/auto-farm-wiring";
+import { createAutoFarm } from "../mods/farm/auto-farm-wiring";
+import { installAllMods } from "../mods";
 import { createInventoryRuntime } from "./ui/inventory-runtime";
 import { createDisplayedPower } from "./game/runtime/displayed-power";
 import { createPlayerIdentityRendering } from "./game/runtime/render/player-identity-wiring";
@@ -866,6 +867,7 @@ import { installHelloOverlay } from "../mods/hello-overlay";
   installGameTicker(gameElements.chatPanel, localStorage, () => coop?.patreonSupporterNames?.() ?? []);
   offlineProgressSetting = installOfflineProgressSetting(document, () => coop);
   installHelloOverlay();
+  installAllMods();
 
   createAutoFarmPanel({
     farm: autoFarm, mapName: () => MAP_CONFIG[currentMapId].name, aggro: () => coop?.aggroChallenge?.(), identity: coopAccess.localIdentity,
