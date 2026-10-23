@@ -96,7 +96,7 @@ import { createRewardDisplay } from "./game/runtime/reward-display";
 import { onwardCue } from "./game/runtime/onward-cue";
 import { bossPortalCutscenes } from "./game/runtime/boss/boss-portal-cutscenes";
 import { MAX_PLAYER_STAT, PLAYER_SPAWN } from "../shared/rules";
-import { installModMenu } from "../mods/modmenu";
+import { installAllMods } from "../mods";
 
 (() => {
   "use strict";
@@ -865,7 +865,7 @@ import { installModMenu } from "../mods/modmenu";
   chatRuntime.init();
   installGameTicker(gameElements.chatPanel, localStorage, () => coop?.patreonSupporterNames?.() ?? []);
   offlineProgressSetting = installOfflineProgressSetting(document, () => coop);
-  installModMenu();
+  installAllMods();
 
   createAutoFarmPanel({
     farm: autoFarm, mapName: () => MAP_CONFIG[currentMapId].name, aggro: () => coop?.aggroChallenge?.(), identity: coopAccess.localIdentity,
