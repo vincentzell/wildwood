@@ -1,6 +1,6 @@
 // mods/modmenu.ts
 import { installMovableHudCard } from "../src/ui/movable-hud-card";
-
+import { REGISTERED_MODS } from "./registry";
 const MOD_MENU_ID = "mod-modmenu";
 const POSITION_KEY = "wildwood-mod-modmenu-position";
 const COLLAPSED_KEY = "wildwood-mod-modmenu-collapsed";
@@ -37,13 +37,27 @@ export function installModMenu(): void {
   greeting.style.margin = "0 0 6px";
   greeting.textContent = "Hello World !";
 
-  const empty = document.createElement("p");
-  empty.style.margin = "0";
-  empty.style.opacity = "0.6";
-  empty.style.fontSize = "11px";
-  empty.textContent = "Aucun mod actif.";
+  const list = document.createElement("ul");
+  list.style.margin = "0";
+  list.style.padding = "0";
+  list.style.listStyle = "none";
 
-  content.append(greeting, empty);
+  if (REGISTERED_MODS.length === 0) {
+    const empty = document.createElement("li");
+    empty.style.opacity = "0.6";
+    empty.style.fontSize = "11px";
+    empty.textContent = "Aucun mod actif.";
+    list.append(empty);
+  } else {
+    for (const mod of REGISTERED_MODS) {
+      const li = document.createElement("li");
+      li.textContent = mod.name;
+      li.style.padding = "2px 0";
+      list.append(li);
+    }
+  }
+
+  content.append(greeting, list);
   panel.append(header, content);
   hud.append(panel);
 
