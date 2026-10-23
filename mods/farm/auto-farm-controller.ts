@@ -10,7 +10,7 @@ import type { Movement } from '../../src/game/runtime/player-input-controller';
 import { isEnemyAttackingPlayer } from '../../src/game/runtime/enemies/enemy-threat';
 import { farmRoute } from '../../src/game/runtime/auto-farm/auto-farm-navigation';
 import { bossSurfaceDistance, bossVerticalRadius } from '../../shared/boss-hitbox';
-import { isAutoDodgeEnabled } from "../farm-auto-dodge";
+import { isAutoDodgeEnabled } from "../farm-auto-kiting";
 import {
   KITE_GAP, KITE_ROOM, KITE_TUNING,
   orbitStep, planEvasion, shotDanger,

@@ -1,4 +1,4 @@
-// mods/farm-auto-dodge.ts
+// mods/farm-auto-kiting.ts
 import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-auto-dodge-enabled";
@@ -13,8 +13,8 @@ export function isAutoDodgeEnabled(): boolean {
 
 export function registerFarmAutoDodgeMod(): void {
   REGISTERED_MODS.push({
-    id: "farm-auto-dodge",
-    name: "Auto-dodge (natif)",
+    id: "farm-auto-kiting",
+    name: "Auto Kiting",
     category: "FARM",
     description:
       "Réactive l'esquive automatique du farm : cercle autour des chasers (arc balayé) et dodge des attaques en jeu. Désactivé par défaut côté jeu.",

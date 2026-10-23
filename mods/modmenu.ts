@@ -6,13 +6,27 @@ const MOD_MENU_ID = "mod-modmenu";
 const POSITION_KEY = "wildwood-mod-modmenu-position";
 const COLLAPSED_KEY = "wildwood-mod-modmenu-collapsed";
 const ACTIVE_TAB_KEY = "wildwood-mod-modmenu-tab";
-const CARD_COLLAPSED_PREFIX = "wildwood-mod-modmenu-card-";
 
 const CATEGORIES: readonly ModCategory[] = ["FARM", "QUEST", "CARD", "MISC"];
 
+const PLAYER_HUD_SELECTOR = ".player-hud-card";
+
+function playerHudWidth(): number | null {
+  const el = document.querySelector(PLAYER_HUD_SELECTOR);
+  if (!el) return null;
+  const w = el.getBoundingClientRect().width;
+  return w > 0 ? Math.round(w) : null;
+}
+
+function applyMaxWidth(panel: HTMLElement): void {
+  const hudW = playerHudWidth() ?? 320;
+  const cap = Math.max(200, Math.min(hudW, window.innerWidth - 16));
+  panel.style.maxWidth = `${cap}px`;
+}
+
 /**
- * Menu flottant des mods, avec onglets par catégorie et une carte repliable
- * par mod. Rejoue la mécanique du stat tracker : classe `.stat-tracker`,
+ * Menu flottant des mods, avec onglets par catégorie.
+ * Rejoue la mécanique du stat tracker : classe `.stat-tracker`,
  * ancré dans `#hud`, déplaçable via `installMovableHudCard`.
  */
 export function installModMenu(): void {
@@ -28,6 +42,9 @@ export function installModMenu(): void {
   panel.id = MOD_MENU_ID;
   panel.className = "stat-tracker";
   panel.setAttribute("aria-label", "Mod menu");
+  panel.style.right = "16px";
+  panel.style.left = "auto";
+  panel.style.top = "16px";
 
   const header = document.createElement("header");
   const handle = document.createElement("button");
@@ -88,6 +105,18 @@ export function installModMenu(): void {
 
   panel.append(header, tabsBar, content);
   hud.append(panel);
+  applyMaxWidth(panel);
+  window.addEventListener("resize", () => {
+    applyMaxWidth(panel);
+    applyInitialPosition();
+  });
+  if (typeof ResizeObserver !== "undefined") {
+    const target = document.querySelector(PLAYER_HUD_SELECTOR);
+    if (target) new ResizeObserver(() => {
+      applyMaxWidth(panel);
+      applyInitialPosition();
+    }).observe(target);
+  }
 
   let collapsed = false;
   try {
@@ -96,20 +125,20 @@ export function installModMenu(): void {
     /* idem */
   }
 
-  const isCardCollapsed = (id: string): boolean => {
+  const hasSavedPosition = (): boolean => {
     try {
-      return localStorage.getItem(CARD_COLLAPSED_PREFIX + id) === "true";
+      const saved = JSON.parse(localStorage.getItem(POSITION_KEY) ?? "null");
+      return Boolean(saved && Number.isFinite(saved.x) && Number.isFinite(saved.y));
     } catch {
       return false;
     }
   };
-  const setCardCollapsed = (id: string, value: boolean): void => {
-    try {
-      localStorage.setItem(CARD_COLLAPSED_PREFIX + id, String(value));
-    } catch {
-      /* idem */
-    }
-  };
+  function applyInitialPosition(): void {
+    if (hasSavedPosition()) return;
+    panel.style.right = "16px";
+    panel.style.left = "auto";
+    panel.style.top = "16px";
+  }
 
   function renderCard(mod: Mod): HTMLElement {
     const card = document.createElement("div");
@@ -126,7 +155,6 @@ export function installModMenu(): void {
       alignItems: "center",
       gap: "6px",
       padding: "4px 6px",
-      cursor: "pointer",
       userSelect: "none",
     });
 
@@ -148,38 +176,13 @@ export function installModMenu(): void {
       checkbox.type = "checkbox";
       checkbox.checked = sw.get();
       checkbox.addEventListener("change", () => sw.set(checkbox.checked));
-      // Évite que le clic sur le switch replie la carte.
-      label.addEventListener("click", (e) => e.stopPropagation());
       label.append(checkbox, document.createTextNode(sw.label));
       cardHeader.append(cardTitle, label);
     } else {
       cardHeader.append(cardTitle);
     }
 
-    const caret = document.createElement("span");
-    caret.style.fontSize = "11px";
-    const startCollapsed = isCardCollapsed(mod.id);
-    caret.textContent = startCollapsed ? "▸" : "▾";
-    cardHeader.append(caret);
-
-    const cardBody = document.createElement("div");
-    Object.assign(cardBody.style, {
-      padding: "4px 8px 6px",
-      fontSize: "11px",
-      opacity: "0.85",
-    });
-    cardBody.textContent = mod.description ?? "";
-    cardBody.hidden = startCollapsed;
-
-    cardHeader.addEventListener("click", () => {
-      const nowCollapsed = !isCardCollapsed(mod.id);
-      setCardCollapsed(mod.id, nowCollapsed);
-      cardBody.hidden = nowCollapsed;
-      caret.textContent = nowCollapsed ? "▸" : "▾";
-      movable.place();
-    });
-
-    card.append(cardHeader, cardBody);
+    card.append(cardHeader);
     return card;
   }
 
@@ -201,6 +204,7 @@ export function installModMenu(): void {
       for (const mod of mods) content.append(renderCard(mod));
     }
     movable.place();
+    applyInitialPosition();
   }
 
   function renderCollapsed(): void {
@@ -210,6 +214,7 @@ export function installModMenu(): void {
     tabsBar.hidden = collapsed;
     content.hidden = collapsed;
     movable.place();
+    applyInitialPosition();
   }
 
   const movable = installMovableHudCard({

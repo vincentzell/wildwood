@@ -1,4 +1,4 @@
-import { isAutoDodgeEnabled } from "../farm-auto-dodge";
+import { isAutoDodgeEnabled } from "../farm-auto-kiting";
 import { isMeleeWeapon, weaponAttackRange } from "../../src/game/weapon-combat";
 import { WORLD } from '../../src/game/constants';
 import { monotonicNowMs, wallClockNowMs } from '../../src/app/trusted-clock';
