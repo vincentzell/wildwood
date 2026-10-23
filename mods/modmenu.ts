@@ -65,6 +65,7 @@ export function installModMenu(): void {
   // Zone de contenu (cartes des mods actifs de l'onglet courant)
   const content = document.createElement("div");
   content.style.padding = "6px 8px";
+  const statusRefreshers = new Map<string, () => void>();
 
   let activeTab: ModCategory = "FARM";
   try {
@@ -183,10 +184,23 @@ export function installModMenu(): void {
     }
 
     card.append(cardHeader);
+    if (mod.status) {
+      const statusEl = document.createElement("div");
+      statusEl.style.cssText =
+        "padding:4px 8px 6px;border-top:1px solid rgba(255,255,255,.1);" +
+        "font-size:11px;max-height:220px;overflow-y:auto;";
+      const update = () => {
+        statusEl.replaceChildren(mod.status!.render());
+      };
+      update();
+      statusRefreshers.set(mod.id, update);
+      card.append(statusEl);
+    }
     return card;
   }
 
   function render(): void {
+    statusRefreshers.clear();
     for (const [category, btn] of tabButtons) {
       const isActive = category === activeTab;
       btn.style.background = isActive ? "rgba(255,255,255,.15)" : "transparent";
@@ -234,5 +248,9 @@ export function installModMenu(): void {
   });
 
   renderCollapsed();
+  window.setInterval(() => {
+    if (collapsed) return;
+    for (const update of statusRefreshers.values()) update();
+  }, 1_500);
   render();
 }

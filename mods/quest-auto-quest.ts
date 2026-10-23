@@ -7,6 +7,12 @@ const QUEST_WAIT_MS = 60_000;
 const TRAVEL_WAIT_MS = 15_000;
 const TICK_MS = 2_000;
 
+type QuestPhase = "idle" | "scanning" | "traveling" | "farming" | "waiting";
+
+let currentPhase: QuestPhase = "idle";
+let currentQuestEnemy = "";
+let currentQuestMap = "";
+
 type CoopQuest = {
   mapId: string;
   enemy: string;
@@ -121,6 +127,31 @@ function stopFarm(): void {
   if (btn?.textContent?.trim() === "Stop" && !btn.disabled) btn.click();
 }
 
+let savedAdvance: boolean | null = null;
+
+function disableMoveOn(): void {
+  const sheet = document.getElementById("autoFarmSheet");
+  const sw = sheet?.querySelector<HTMLElement>('[data-switch="advance"]');
+  if (!sw) return;
+  const wasOn = sw.getAttribute("aria-checked") === "true";
+  if (savedAdvance === null) savedAdvance = wasOn;
+  if (wasOn) sw.click();
+}
+
+function restoreMoveOn(): void {
+  if (savedAdvance === null) return;
+  const sheet = document.getElementById("autoFarmSheet");
+  if (!sheet) return;
+  const sw = sheet.querySelector<HTMLElement>('[data-switch="advance"]');
+  if (!sw) {
+    savedAdvance = null;
+    return;
+  }
+  const isOn = sw.getAttribute("aria-checked") === "true";
+  if (savedAdvance && !isOn) sw.click();
+  savedAdvance = null;
+}
+
 async function waitForStat(enemy: string): Promise<string | null> {
   const start = Date.now();
   while (Date.now() - start < 2_000 && !abort) {
@@ -154,6 +185,9 @@ let abort = false;
 let intervalId: number | null = null;
 
 async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
+  currentPhase = "traveling";
+  currentQuestEnemy = quest.enemy;
+  currentQuestMap = quest.mapId;
   if (!(await travelTo(coop, quest.mapId))) {
     console.warn(`[mod-auto-quest] voyage vers ${quest.mapId} échoué`);
     return false;
@@ -171,10 +205,12 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
     console.warn(`[mod-auto-quest] groupe ${group} introuvable`);
     return false;
   }
+  disableMoveOn();
   if (!startFarm()) {
     console.warn("[mod-auto-quest] démarrage du farm refusé");
     return false;
   }
+  currentPhase = "farming";
 
   const deadline = Date.now() + QUEST_WAIT_MS;
   while (Date.now() < deadline && !abort) {
@@ -183,7 +219,10 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
     const current = coop.weeklyQuests?.()?.quests.find(q =>
       q.mapId === quest.mapId && q.enemy === quest.enemy && q.target === quest.target,
     );
-    if (current?.progress !== undefined && current.progress >= current.target) return true;
+    if (current?.progress !== undefined && current.progress >= current.target) {
+      currentPhase = "waiting";
+      return true;
+    }
   }
   return false;
 }
@@ -193,16 +232,21 @@ async function runLoop(coop: CoopLike): Promise<void> {
   abort = false;
   try {
     while (!abort && isAutoQuestEnabled()) {
+      currentPhase = "scanning";
       const quests = activeQuests(coop);
       if (quests.length === 0) {
+        currentPhase = "waiting";
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
         continue;
       }
       const ok = await tryOneQuest(coop, quests[0]);
+      if (ok) currentPhase = "waiting";
       if (!ok && !abort) await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
     }
   } finally {
     stopFarm();
+    restoreMoveOn();
+    currentPhase = "idle";
     running = false;
   }
 }
@@ -227,6 +271,56 @@ function stopPolling(): void {
   }
 }
 
+function renderStatus(): HTMLElement {
+  const wrap = document.createElement("div");
+  const stateMap: Record<QuestPhase, string> = {
+    idle: "Off",
+    scanning: "Recherche de quêtes…",
+    traveling: `Voyage vers ${currentQuestMap}`,
+    farming: `Farm ${currentQuestEnemy}`,
+    waiting: "En attente",
+  };
+  const stateLine = document.createElement("div");
+  stateLine.style.cssText = "margin-bottom:4px;font-weight:600;color:#b7c5b7;";
+  stateLine.textContent = isAutoQuestEnabled() ? stateMap[currentPhase] : "Désactivé";
+  wrap.append(stateLine);
+
+  const coop = getCoop();
+  const quests = coop ? activeQuests(coop) : [];
+  if (quests.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "opacity:.55;font-size:10px;";
+    empty.textContent = "Aucune quête active";
+    wrap.append(empty);
+    return wrap;
+  }
+
+  for (const quest of quests) {
+    const isCurrent = currentPhase === "farming"
+      && quest.enemy === currentQuestEnemy
+      && quest.mapId === currentQuestMap;
+    const row = document.createElement("div");
+    row.style.cssText =
+      "padding:2px 0;font-size:10px;line-height:1.3;" +
+      (isCurrent ? "color:#69e56f;" : "");
+    const line1 = document.createElement("div");
+    line1.style.cssText = "display:flex;justify-content:space-between;gap:6px;";
+    const name = document.createElement("span");
+    name.textContent = (isCurrent ? "▶ " : "") + quest.enemy;
+    name.style.fontWeight = isCurrent ? "700" : "500";
+    const progress = document.createElement("span");
+    progress.style.opacity = ".85";
+    progress.textContent = `${quest.progress}/${quest.target}`;
+    line1.append(name, progress);
+    const line2 = document.createElement("div");
+    line2.style.cssText = `opacity:.6;font-size:9px;padding-left:${isCurrent ? "12px" : "0"}`;
+    line2.textContent = `${quest.mapId} · ${statFromTracker(quest.enemy) ?? "?"}`;
+    row.append(line1, line2);
+    wrap.append(row);
+  }
+  return wrap;
+}
+
 export function registerAutoQuestMod(): void {
   REGISTERED_MODS.push({
     id: "quest-auto-quest",
@@ -245,6 +339,7 @@ export function registerAutoQuestMod(): void {
         else stopPolling();
       },
     },
+    status: { render: renderStatus, intervalMs: 1_500 },
     install: () => {
       if (isAutoQuestEnabled()) startPolling();
     },

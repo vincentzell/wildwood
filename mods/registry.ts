@@ -1,6 +1,13 @@
 // mods/registry.ts
 export type ModCategory = "FARM" | "QUEST" | "CARD" | "MISC";
 
+export type ModStatus = {
+  /** Rendu d'un bloc HTML affiché sous le switch. Appelé ~1.5s. */
+  render: () => HTMLElement;
+  /** Intervalle de rafraîchissement en ms (défaut : 1500). */
+  intervalMs?: number;
+};
+
 export type Mod = {
   id: string;
   name: string;
@@ -12,6 +19,7 @@ export type Mod = {
     get: () => boolean;
     set: (value: boolean) => void;
   };
+  status?: ModStatus;
   install?: () => void;
 };
 
