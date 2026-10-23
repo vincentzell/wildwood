@@ -1,14 +1,19 @@
 // mods/modmenu.ts
 import { installMovableHudCard } from "../src/ui/movable-hud-card";
-import { REGISTERED_MODS } from "./registry";
+import { REGISTERED_MODS, type Mod, type ModCategory } from "./registry";
+
 const MOD_MENU_ID = "mod-modmenu";
 const POSITION_KEY = "wildwood-mod-modmenu-position";
 const COLLAPSED_KEY = "wildwood-mod-modmenu-collapsed";
+const ACTIVE_TAB_KEY = "wildwood-mod-modmenu-tab";
+const CARD_COLLAPSED_PREFIX = "wildwood-mod-modmenu-card-";
+
+const CATEGORIES: readonly ModCategory[] = ["FARM", "QUEST", "CARD", "MISC"];
 
 /**
- * Menu flottant des mods. Rejoue la mécanique du stat tracker :
- * classe CSS `.stat-tracker`, ancré dans `#hud`, déplaçable via
- * `installMovableHudCard`, repliable via `is-collapsed`.
+ * Menu flottant des mods, avec onglets par catégorie et une carte repliable
+ * par mod. Rejoue la mécanique du stat tracker : classe `.stat-tracker`,
+ * ancré dans `#hud`, déplaçable via `installMovableHudCard`.
  */
 export function installModMenu(): void {
   if (document.getElementById(MOD_MENU_ID)) return;
@@ -30,52 +35,179 @@ export function installModMenu(): void {
   handle.className = "stat-tracker-handle";
   header.append(handle);
 
+  // Barre d'onglets
+  const tabsBar = document.createElement("nav");
+  tabsBar.setAttribute("role", "tablist");
+  Object.assign(tabsBar.style, {
+    display: "flex",
+    gap: "2px",
+    padding: "4px 6px",
+    borderBottom: "1px solid rgba(255,255,255,.1)",
+  });
+
+  // Zone de contenu (cartes des mods actifs de l'onglet courant)
   const content = document.createElement("div");
   content.style.padding = "6px 8px";
 
-  const greeting = document.createElement("p");
-  greeting.style.margin = "0 0 6px";
-  greeting.textContent = "Hello World !";
-
-  const list = document.createElement("ul");
-  list.style.margin = "0";
-  list.style.padding = "0";
-  list.style.listStyle = "none";
-
-  if (REGISTERED_MODS.length === 0) {
-    const empty = document.createElement("li");
-    empty.style.opacity = "0.6";
-    empty.style.fontSize = "11px";
-    empty.textContent = "Aucun mod actif.";
-    list.append(empty);
-  } else {
-    for (const mod of REGISTERED_MODS) {
-      const li = document.createElement("li");
-      li.textContent = mod.name;
-      li.style.padding = "2px 0";
-      list.append(li);
-    }
+  let activeTab: ModCategory = "FARM";
+  try {
+    const saved = localStorage.getItem(ACTIVE_TAB_KEY) as ModCategory | null;
+    if (saved && CATEGORIES.includes(saved)) activeTab = saved;
+  } catch {
+    /* localStorage indisponible : on garde le défaut */
   }
 
-  content.append(greeting, list);
-  panel.append(header, content);
+  const tabButtons = new Map<ModCategory, HTMLButtonElement>();
+  for (const category of CATEGORIES) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = category;
+    btn.setAttribute("role", "tab");
+    Object.assign(btn.style, {
+      flex: "1",
+      font: "inherit",
+      padding: "3px 6px",
+      cursor: "pointer",
+      background: "transparent",
+      border: "1px solid transparent",
+      borderRadius: "4px",
+      color: "inherit",
+    });
+    btn.addEventListener("click", () => {
+      activeTab = category;
+      try {
+        localStorage.setItem(ACTIVE_TAB_KEY, category);
+      } catch {
+        /* idem */
+      }
+      render();
+    });
+    tabButtons.set(category, btn);
+    tabsBar.append(btn);
+  }
+
+  panel.append(header, tabsBar, content);
   hud.append(panel);
 
   let collapsed = false;
   try {
     collapsed = localStorage.getItem(COLLAPSED_KEY) === "true";
   } catch {
-    // localStorage indisponible : état par défaut, pas d'erreur.
+    /* idem */
+  }
+
+  const isCardCollapsed = (id: string): boolean => {
+    try {
+      return localStorage.getItem(CARD_COLLAPSED_PREFIX + id) === "true";
+    } catch {
+      return false;
+    }
+  };
+  const setCardCollapsed = (id: string, value: boolean): void => {
+    try {
+      localStorage.setItem(CARD_COLLAPSED_PREFIX + id, String(value));
+    } catch {
+      /* idem */
+    }
+  };
+
+  function renderCard(mod: Mod): HTMLElement {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      border: "1px solid rgba(255,255,255,.15)",
+      borderRadius: "4px",
+      margin: "4px 0",
+      overflow: "hidden",
+    });
+
+    const cardHeader = document.createElement("div");
+    Object.assign(cardHeader.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "4px 6px",
+      cursor: "pointer",
+      userSelect: "none",
+    });
+
+    const cardTitle = document.createElement("span");
+    cardTitle.textContent = mod.name;
+    Object.assign(cardTitle.style, { flex: "1", fontWeight: "600" });
+
+    if (mod.switch) {
+      const sw = mod.switch;
+      const label = document.createElement("label");
+      Object.assign(label.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        fontSize: "11px",
+        cursor: "pointer",
+      });
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = sw.get();
+      checkbox.addEventListener("change", () => sw.set(checkbox.checked));
+      // Évite que le clic sur le switch replie la carte.
+      label.addEventListener("click", (e) => e.stopPropagation());
+      label.append(checkbox, document.createTextNode(sw.label));
+      cardHeader.append(cardTitle, label);
+    } else {
+      cardHeader.append(cardTitle);
+    }
+
+    const caret = document.createElement("span");
+    caret.style.fontSize = "11px";
+    const startCollapsed = isCardCollapsed(mod.id);
+    caret.textContent = startCollapsed ? "▸" : "▾";
+    cardHeader.append(caret);
+
+    const cardBody = document.createElement("div");
+    Object.assign(cardBody.style, {
+      padding: "4px 8px 6px",
+      fontSize: "11px",
+      opacity: "0.85",
+    });
+    cardBody.textContent = mod.description ?? "";
+    cardBody.hidden = startCollapsed;
+
+    cardHeader.addEventListener("click", () => {
+      const nowCollapsed = !isCardCollapsed(mod.id);
+      setCardCollapsed(mod.id, nowCollapsed);
+      cardBody.hidden = nowCollapsed;
+      caret.textContent = nowCollapsed ? "▸" : "▾";
+      movable.place();
+    });
+
+    card.append(cardHeader, cardBody);
+    return card;
+  }
+
+  function render(): void {
+    for (const [category, btn] of tabButtons) {
+      const isActive = category === activeTab;
+      btn.style.background = isActive ? "rgba(255,255,255,.15)" : "transparent";
+      btn.style.borderColor = isActive ? "rgba(255,255,255,.3)" : "transparent";
+      btn.setAttribute("aria-selected", String(isActive));
+    }
+    content.replaceChildren();
+    const mods = REGISTERED_MODS.filter((m) => m.category === activeTab);
+    if (mods.length === 0) {
+      const empty = document.createElement("p");
+      Object.assign(empty.style, { margin: "4px 0", opacity: "0.6", fontSize: "11px" });
+      empty.textContent = `Aucun mod ${activeTab}.`;
+      content.append(empty);
+    } else {
+      for (const mod of mods) content.append(renderCard(mod));
+    }
+    movable.place();
   }
 
   function renderCollapsed(): void {
     panel.classList.toggle("is-collapsed", collapsed);
     handle.setAttribute("aria-expanded", String(!collapsed));
-    handle.setAttribute(
-      "aria-label",
-      `${collapsed ? "Expand" : "Collapse"} mod menu. Drag to move; Home to reset position.`,
-    );
     handle.textContent = `Mods ${collapsed ? "▸" : "▾"}`;
+    tabsBar.hidden = collapsed;
     content.hidden = collapsed;
     movable.place();
   }
@@ -90,11 +222,12 @@ export function installModMenu(): void {
       try {
         localStorage.setItem(COLLAPSED_KEY, String(collapsed));
       } catch {
-        // Ignore : la persistance est optionnelle.
+        /* idem */
       }
       renderCollapsed();
     },
   });
 
   renderCollapsed();
+  render();
 }
