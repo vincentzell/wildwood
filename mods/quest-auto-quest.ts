@@ -1,4 +1,5 @@
 // mods/quest-auto-quest.ts
+import { ENEMY_TYPES } from "../src/game/enemies";
 import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-auto-quest-enabled";
@@ -53,36 +54,6 @@ export function isAutoQuestEnabled(): boolean {
   }
 }
 
-const STAT_COLORS: Record<string, string> = {
-  "rgb(255, 101, 90)": "damage",
-  "rgb(102, 237, 121)": "health",
-  "rgb(255, 224, 93)": "speed",
-  "rgb(116, 216, 255)": "armor",
-  "rgb(255, 124, 203)": "regen",
-  "rgb(255, 154, 77)": "crit",
-};
-
-function statFromTracker(enemy: string): string | null {
-  const items = document.querySelectorAll<HTMLLIElement>(".quest-tracker-item");
-  for (const item of items) {
-    const name = item.querySelector(".quest-tracker-enemy")?.textContent?.trim();
-    if (name !== enemy) continue;
-    const statEl = item.querySelector<HTMLElement>(".quest-tracker-stat");
-    if (!statEl) return null;
-    const color = statEl.style.color;
-    if (color && STAT_COLORS[color]) return STAT_COLORS[color];
-    const label = (statEl.textContent ?? "").toLowerCase();
-    if (label.includes("damage")) return "damage";
-    if (label.includes("max health") || label.includes("health")) return "health";
-    if (label.includes("attack speed") || label.includes("speed")) return "speed";
-    if (label.includes("armor")) return "armor";
-    if (label.includes("regen") || label.includes("hp/sec")) return "regen";
-    if (label.includes("crit")) return "crit";
-    return null;
-  }
-  return null;
-}
-
 function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
@@ -131,40 +102,11 @@ let savedAdvance: boolean | null = null;
 
 function disableMoveOn(): void {
   const sheet = document.getElementById("autoFarmSheet");
-  if (!sheet) {
-    console.warn("[AQ-diag] sheet absent");
-    return;
-  }
-  const sw = sheet.querySelector<HTMLElement>('[data-switch="advance"]');
-  if (!sw) {
-    console.warn("[AQ-diag] switch advance introuvable. Contenu :",
-      Array.from(sheet.querySelectorAll("[data-switch]"))
-        .map(el => el.getAttribute("data-switch")));
-    return;
-  }
-  console.log("[AQ-diag] switch trouvé", {
-    tag: sw.tagName,
-    ariaChecked: sw.getAttribute("aria-checked"),
-    ariaPressed: sw.getAttribute("aria-pressed"),
-    className: sw.className,
-    children: Array.from(sw.children).map(c => ({
-      tag: c.tagName,
-      type: (c as HTMLInputElement).type,
-      checked: (c as HTMLInputElement).checked,
-    })),
-  });
+  const sw = sheet?.querySelector<HTMLElement>('[data-switch="advance"]');
+  if (!sw) return;
   const wasOn = sw.getAttribute("aria-checked") === "true";
   if (savedAdvance === null) savedAdvance = wasOn;
-  if (wasOn) {
-    console.log("[AQ-diag] clic pour désactiver");
-    sw.click();
-    setTimeout(() => {
-      console.log("[AQ-diag] état après clic :", {
-        ariaChecked: sw.getAttribute("aria-checked"),
-        className: sw.className,
-      });
-    }, 100);
-  }
+  if (wasOn) sw.click();
 }
 
 function restoreMoveOn(): void {
@@ -179,16 +121,6 @@ function restoreMoveOn(): void {
   const isOn = sw.getAttribute("aria-checked") === "true";
   if (savedAdvance && !isOn) sw.click();
   savedAdvance = null;
-}
-
-async function waitForStat(enemy: string): Promise<string | null> {
-  const start = Date.now();
-  while (Date.now() - start < 2_000 && !abort) {
-    const stat = statFromTracker(enemy);
-    if (stat) return stat;
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-  return null;
 }
 
 async function travelTo(coop: CoopLike, mapId: string): Promise<boolean> {
@@ -223,23 +155,10 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   }
   await new Promise(resolve => setTimeout(resolve, 800));
 
-  const stat = await waitForStat(quest.enemy);
+  const def = ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES];
+  const stat = def?.reward.type;
   if (!stat) {
-    const items = document.querySelectorAll(".quest-tracker-item");
-    console.warn(`[AQ-diag] stat introuvable pour ${quest.enemy}. Tracker a ${items.length} item(s).`);
-    for (const item of items) {
-      const nameEl = item.querySelector(".quest-tracker-enemy");
-      const statEl = item.querySelector<HTMLElement>(".quest-tracker-stat");
-      console.warn("[AQ-diag] item :", {
-        name: nameEl?.textContent?.trim(),
-        statText: statEl?.textContent?.trim(),
-        statColorInline: statEl?.style.color,
-        statColorComputed: statEl ? getComputedStyle(statEl).color : null,
-        statClass: statEl?.className,
-        statInnerHTML: statEl?.innerHTML?.slice(0, 100),
-      });
-    }
-    if (!abort) console.warn(`[mod-auto-quest] stat introuvable pour ${quest.enemy}`);
+    console.warn(`[mod-auto-quest] stat introuvable pour ${quest.enemy}`);
     return false;
   }
   if (!ensureFarmPanelOpen()) return false;
@@ -362,7 +281,8 @@ function renderStatus(): HTMLElement {
     line1.append(name, progress);
     const line2 = document.createElement("div");
     line2.style.cssText = `opacity:.6;font-size:9px;padding-left:${isCurrent ? "12px" : "0"}`;
-    line2.textContent = `${quest.mapId} · ${statFromTracker(quest.enemy) ?? "?"}`;
+    const stat = ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES]?.reward.type ?? "?";
+    line2.textContent = `${quest.mapId} · ${stat}`;
     row.append(line1, line2);
     wrap.append(row);
   }
