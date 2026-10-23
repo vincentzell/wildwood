@@ -131,11 +131,40 @@ let savedAdvance: boolean | null = null;
 
 function disableMoveOn(): void {
   const sheet = document.getElementById("autoFarmSheet");
-  const sw = sheet?.querySelector<HTMLElement>('[data-switch="advance"]');
-  if (!sw) return;
+  if (!sheet) {
+    console.warn("[AQ-diag] sheet absent");
+    return;
+  }
+  const sw = sheet.querySelector<HTMLElement>('[data-switch="advance"]');
+  if (!sw) {
+    console.warn("[AQ-diag] switch advance introuvable. Contenu :",
+      Array.from(sheet.querySelectorAll("[data-switch]"))
+        .map(el => el.getAttribute("data-switch")));
+    return;
+  }
+  console.log("[AQ-diag] switch trouvé", {
+    tag: sw.tagName,
+    ariaChecked: sw.getAttribute("aria-checked"),
+    ariaPressed: sw.getAttribute("aria-pressed"),
+    className: sw.className,
+    children: Array.from(sw.children).map(c => ({
+      tag: c.tagName,
+      type: (c as HTMLInputElement).type,
+      checked: (c as HTMLInputElement).checked,
+    })),
+  });
   const wasOn = sw.getAttribute("aria-checked") === "true";
   if (savedAdvance === null) savedAdvance = wasOn;
-  if (wasOn) sw.click();
+  if (wasOn) {
+    console.log("[AQ-diag] clic pour désactiver");
+    sw.click();
+    setTimeout(() => {
+      console.log("[AQ-diag] état après clic :", {
+        ariaChecked: sw.getAttribute("aria-checked"),
+        className: sw.className,
+      });
+    }, 100);
+  }
 }
 
 function restoreMoveOn(): void {
@@ -196,6 +225,20 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
 
   const stat = await waitForStat(quest.enemy);
   if (!stat) {
+    const items = document.querySelectorAll(".quest-tracker-item");
+    console.warn(`[AQ-diag] stat introuvable pour ${quest.enemy}. Tracker a ${items.length} item(s).`);
+    for (const item of items) {
+      const nameEl = item.querySelector(".quest-tracker-enemy");
+      const statEl = item.querySelector<HTMLElement>(".quest-tracker-stat");
+      console.warn("[AQ-diag] item :", {
+        name: nameEl?.textContent?.trim(),
+        statText: statEl?.textContent?.trim(),
+        statColorInline: statEl?.style.color,
+        statColorComputed: statEl ? getComputedStyle(statEl).color : null,
+        statClass: statEl?.className,
+        statInnerHTML: statEl?.innerHTML?.slice(0, 100),
+      });
+    }
     if (!abort) console.warn(`[mod-auto-quest] stat introuvable pour ${quest.enemy}`);
     return false;
   }
@@ -282,7 +325,12 @@ function renderStatus(): HTMLElement {
   };
   const stateLine = document.createElement("div");
   stateLine.style.cssText = "margin-bottom:4px;font-weight:600;color:#b7c5b7;";
-  stateLine.textContent = isAutoQuestEnabled() ? stateMap[currentPhase] : "Désactivé";
+  const sheet = document.getElementById("autoFarmSheet");
+  const sw = sheet?.querySelector<HTMLElement>('[data-switch="advance"]');
+  const advanceState = sw
+    ? `advance=${sw.getAttribute("aria-checked") ?? "?"}`
+    : "advance=ABSENT";
+  stateLine.textContent = (isAutoQuestEnabled() ? stateMap[currentPhase] : "Désactivé") + " · " + advanceState;
   wrap.append(stateLine);
 
   const coop = getCoop();
