@@ -141,6 +141,18 @@ export function installModMenu(): void {
     panel.style.top = "16px";
   }
 
+  const CARD_COLLAPSED_PREFIX = "wildwood-mod-modmenu-card-";
+
+  function isCardCollapsed(id: string): boolean {
+    try { return localStorage.getItem(CARD_COLLAPSED_PREFIX + id) === "true"; }
+    catch { return false; }
+  }
+
+  function setCardCollapsed(id: string, value: boolean): void {
+    try { localStorage.setItem(CARD_COLLAPSED_PREFIX + id, String(value)); }
+    catch { /* idem */ }
+  }
+
   function renderCard(mod: Mod): HTMLElement {
     const card = document.createElement("div");
     Object.assign(card.style, {
@@ -156,12 +168,14 @@ export function installModMenu(): void {
       alignItems: "center",
       gap: "6px",
       padding: "4px 6px",
+      cursor: "pointer",
       userSelect: "none",
     });
 
     const cardTitle = document.createElement("span");
     cardTitle.textContent = mod.name;
     Object.assign(cardTitle.style, { flex: "1", fontWeight: "600" });
+    cardHeader.append(cardTitle);
 
     if (mod.switch) {
       const sw = mod.switch;
@@ -177,25 +191,70 @@ export function installModMenu(): void {
       checkbox.type = "checkbox";
       checkbox.checked = sw.get();
       checkbox.addEventListener("change", () => sw.set(checkbox.checked));
+      label.addEventListener("click", (e) => e.stopPropagation());
       label.append(checkbox, document.createTextNode(sw.label));
-      cardHeader.append(cardTitle, label);
-    } else {
-      cardHeader.append(cardTitle);
+      cardHeader.append(label);
+    }
+
+    const cardBody = document.createElement("div");
+    cardBody.style.cssText =
+      "border-top:1px solid rgba(255,255,255,.1);" +
+      "padding:4px 8px 6px;font-size:11px;";
+
+    if (mod.description) {
+      const desc = document.createElement("div");
+      desc.style.cssText = "opacity:.75;margin-bottom:4px;line-height:1.35;";
+      desc.textContent = mod.description;
+      cardBody.append(desc);
+    }
+
+    let statusEl: HTMLElement | null = null;
+    if (mod.status) {
+      statusEl = document.createElement("div");
+      statusEl.style.cssText = "max-height:220px;overflow-y:auto;";
+      const update = () => {
+        if (cardBody.hidden) return;
+        statusEl!.replaceChildren(mod.status!.render());
+      };
+      statusEl.dataset.updater = "1";
+      update();
+      statusRefreshers.set(mod.id, update);
+      cardBody.append(statusEl);
+    }
+
+    const hasBody = Boolean(mod.description) || Boolean(mod.status);
+    let caret: HTMLSpanElement | null = null;
+    if (hasBody) {
+      caret = document.createElement("span");
+      caret.style.cssText = "font-size:11px;opacity:.7;width:10px;text-align:center;";
+      cardHeader.append(caret);
     }
 
     card.append(cardHeader);
-    if (mod.status) {
-      const statusEl = document.createElement("div");
-      statusEl.style.cssText =
-        "padding:4px 8px 6px;border-top:1px solid rgba(255,255,255,.1);" +
-        "font-size:11px;max-height:220px;overflow-y:auto;";
-      const update = () => {
-        statusEl.replaceChildren(mod.status!.render());
+    if (hasBody) card.append(cardBody);
+
+    if (hasBody) {
+      const applyCollapsed = (isCollapsed: boolean) => {
+        cardBody.hidden = isCollapsed;
+        caret!.textContent = isCollapsed ? "▸" : "▾";
+        if (!isCollapsed && statusEl) {
+          const updater = statusRefreshers.get(mod.id);
+          if (updater) updater();
+        }
+        movable.place();
       };
-      update();
-      statusRefreshers.set(mod.id, update);
-      card.append(statusEl);
+      let isCollapsed = isCardCollapsed(mod.id);
+      applyCollapsed(isCollapsed);
+
+      const toggle = (e: Event) => {
+        e.stopPropagation();
+        isCollapsed = !isCollapsed;
+        setCardCollapsed(mod.id, isCollapsed);
+        applyCollapsed(isCollapsed);
+      };
+      cardHeader.addEventListener("click", toggle);
     }
+
     return card;
   }
 
