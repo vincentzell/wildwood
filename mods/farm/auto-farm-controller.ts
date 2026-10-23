@@ -812,16 +812,25 @@ export function createAutoFarmController(options: {
     noteBossWin();
     const portal = exitPortal();
     const afterBoss = bossBeatenOn === options.mapId();
-    // En mode repeatBoss, après un kill, on attend le respawn au
-    // lieu de Move On vers la map suivante.
-    if (options.repeatBoss?.() && afterBoss && advance) {
-      if (bossWanted()) { waitingForBossRespawn = false; phase = 'boss'; travellingTo = null; return; }
-      // Pas encore respawné : on attend sur place, en phase farm
-      // (mais sans cible : farmIdle).
-      if (phase !== 'farm') { target = null; route = []; lastGoal = null; routeClock = 0; holding = false; }
-      waitingForBossRespawn = true;
-      phase = 'farm';
-      return;
+    // Mode repeatBoss : on ne passe JAMAIS en phase portal tant qu'un
+    // boss existe sur cette map. On force soit le combat, soit
+    // l'attente.
+    if (options.repeatBoss?.() && advance) {
+      const boss = options.mapBoss?.();
+      if (boss) {
+        if (bossWanted()) {
+          waitingForBossRespawn = false;
+          phase = 'boss';
+          travellingTo = null;
+          return;
+        }
+        // Boss présent mais pas prêt (ou mort) : on reste immobile
+        if (phase !== 'farm') { target = null; route = []; lastGoal = null; routeClock = 0; holding = false; }
+        waitingForBossRespawn = true;
+        phase = 'farm';
+        return;
+      }
+      // Pas de boss sur cette map : on laisse la logique normale
     }
     waitingForBossRespawn = false;
     // A trip under way, or one straight after a boss win, goes on whatever the health.
@@ -923,12 +932,20 @@ export function createAutoFarmController(options: {
   }
 
   function movement(manual: Movement, dt: number): Movement {
+    // Mode repeatBoss : on reste sur la map tant qu'un boss y existe
+    // et n'est pas encore attaquable. On idle dans tous les cas
+    // sauf quand bossWanted() peut enfin nous laisser passer en
+    // phase boss (vérifié juste après choosePhase()).
     if (waitingForBossRespawn) {
       const boss = options.mapBoss?.();
-      if (!options.repeatBoss?.() || !advance || (boss && !boss.dead)) {
+      if (!options.repeatBoss?.() || !advance || !boss) {
+        waitingForBossRespawn = false;
+      } else if (bossWanted()) {
+        // Boss prêt : on laisse choosePhaseNow() basculer en phase boss
         waitingForBossRespawn = false;
       } else {
-        status = 'Waiting for boss respawn';
+        // Boss vivant-mais-pas-prêt, ou mort, ou respawn en cours
+        status = boss.dead ? 'Waiting for boss respawn' : 'Waiting for boss ready';
         return idle();
       }
     }
