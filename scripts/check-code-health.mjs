@@ -32,7 +32,7 @@ function measureSource(path) {
     lines: lines.length - Number(source.endsWith("\n")),
     linesOver160: lines.filter(line => line.length > 160).length,
     linesOver300: lines.filter(line => line.length > 300).length,
-    bytes: Buffer.byteLength(source, "utf8"),
+    bytes: Buffer.byteLength(source.replace(/\r\n/g, "\n"), "utf8"),
   };
 }
 

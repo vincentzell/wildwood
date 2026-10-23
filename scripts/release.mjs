@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { extname, join, relative, resolve } from "node:path";
 
 const nextVersion = process.argv[2];
 const checkOnly = process.argv.includes("--check");
@@ -17,6 +17,7 @@ const versionPath = resolve(root, "public/version.json");
 const changelogPath = resolve(root, "src/app/changelog.ts");
 const assetsPath = resolve(root, "public/assets");
 const assetStampPath = resolve(root, "config/shipped-assets.json");
+const TEXT_ASSET_EXTENSIONS = new Set([".css", ".html", ".js", ".json", ".md", ".svg", ".txt", ".xml", ".webmanifest"]);
 
 /**
  * A cached client keeps asking for the artwork it was built against, so
@@ -37,7 +38,14 @@ async function shippedAssetDigest(directory) {
     for (const entry of entries) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) await walk(path);
-      else digest.update(`${relative(root, path)}:${(await stat(path)).size}\n`);
+      else {
+        const assetPath = relative(root, path).split(/[\\/]/g).join("/");
+        const extension = extname(path).toLowerCase();
+        const size = TEXT_ASSET_EXTENSIONS.has(extension)
+          ? Buffer.byteLength((await readFile(path, "utf8")).replace(/\r\n/g, "\n"))
+          : (await stat(path)).size;
+        digest.update(`${assetPath}:${size}\n`);
+      }
     }
   };
   await walk(directory);
