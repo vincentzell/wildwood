@@ -11,10 +11,6 @@ export function isAutoDodgeEnabled(): boolean {
   }
 }
 
-function apply(value: boolean): void {
-  (globalThis as { __WILDWOOD_MOD_AUTO_DODGE__?: boolean }).__WILDWOOD_MOD_AUTO_DODGE__ = value;
-}
-
 export function registerFarmAutoDodgeMod(): void {
   REGISTERED_MODS.push({
     id: "farm-auto-dodge",
@@ -31,9 +27,8 @@ export function registerFarmAutoDodgeMod(): void {
         } catch {
           /* idem */
         }
-        apply(value);
+        // Le consommateur lit isAutoDodgeEnabled() à chaque tick : rien à pousser.
       },
     },
-    install: () => apply(isAutoDodgeEnabled()),
   });
 }
