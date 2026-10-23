@@ -5,6 +5,10 @@ const STORAGE_KEY = "wildwood-mod-auto-prestige-enabled";
 const CHECK_INTERVAL_MS = 2_000;
 const RETRY_COOLDOWN_MS = 5_000;
 
+/** Constantes du userscript WildPote — miroir côté client. */
+const PRESTIGE_FIRST_MAP = 15;
+const CAMPAIGN_LENGTH = 15;
+
 type PrestigeResult = { ok?: boolean; error?: string; level?: number };
 
 type CoopLike = {
@@ -35,6 +39,8 @@ let lastReportedLevel = -1;
 let intervalId: number | null = null;
 let warnedNoApi = false;
 let lastBlockReason = "";
+let lastActionResult = "";
+let currentLevel: number | null = null;
 
 function log(msg: string): void {
   console.info(`[mod-auto-prestige] ${msg}`);
@@ -44,6 +50,15 @@ function logBlock(reason: string): void {
   if (reason === lastBlockReason) return;
   lastBlockReason = reason;
   console.info(`[mod-auto-prestige] bloqué : ${reason}`);
+}
+
+function getPrestigeGoal(level: number | null): string {
+  const lvl = level ?? 0;
+  const nextLevel = lvl + 1;
+  const requiredMap = PRESTIGE_FIRST_MAP + Math.max(1, nextLevel) - 1;
+  const endlessStage = Math.max(0, requiredMap - CAMPAIGN_LENGTH);
+  if (endlessStage > 0) return `Clear Endless ${endlessStage} boss (Warden ${endlessStage})`;
+  return "Defeat Aegis Prime";
 }
 
 async function tryPrestige(): Promise<void> {
@@ -58,7 +73,7 @@ async function tryPrestige(): Promise<void> {
   if (!coop) {
     if (!warnedNoApi) {
       warnedNoApi = true;
-      console.warn("[mod-auto-prestige] coop indisponible (window.wildstatCoop absent)");
+      console.warn("[mod-auto-prestige] coop indisponible");
     }
     return;
   }
@@ -72,46 +87,44 @@ async function tryPrestige(): Promise<void> {
 
   try {
     const state = coop.prestige?.();
-    if (!state) {
-      logBlock("prestige() retourne null");
-      return;
-    }
-  } catch (e) {
-    logBlock(`prestige() exception : ${(e as Error).message}`);
-    return;
+    currentLevel = typeof state?.level === "number" ? state.level : null;
+  } catch {
+    currentLevel = null;
   }
 
-  try {
-    const challenge = coop.prestigeChallenge?.();
-    if (challenge?.active) {
-      logBlock("prestigeChallenge actif");
-      return;
+  if (coop.prestigeChallenge) {
+    try {
+      const challenge = coop.prestigeChallenge();
+      if (challenge?.active) {
+        logBlock("prestigeChallenge actif");
+        return;
+      }
+    } catch {
+      // Challenge state is optional; the server decides whether prestige is allowed.
     }
-  } catch (e) {
-    logBlock(`prestigeChallenge() exception : ${(e as Error).message}`);
-    return;
   }
 
   inProgress = true;
   lastBlockReason = "";
-  log("conditions réunies, appel prestigeAccount()");
+  log("appel prestigeAccount()");
   try {
     const result = await coop.prestigeAccount();
     lastAttemptTs = Date.now();
     if (result?.ok) {
       const level = typeof result.level === "number" ? result.level : -1;
+      lastActionResult = level >= 0 ? `Succès (niveau ${level})` : "Succès";
       if (level !== lastReportedLevel) {
         lastReportedLevel = level;
         log(`prestige réussi${level >= 0 ? ` — niveau ${level}` : ""}`);
       }
-    } else if (result?.error) {
-      log(`refus serveur : ${result.error}`);
     } else {
-      log("refus serveur (sans message)");
+      lastActionResult = result?.error ? `Refus : ${result.error}` : "Refus (sans message)";
+      log(lastActionResult);
     }
   } catch (e) {
     lastAttemptTs = Date.now();
-    log(`exception : ${(e as Error).message}`);
+    lastActionResult = `Exception : ${(e as Error).message}`;
+    log(lastActionResult);
   } finally {
     inProgress = false;
   }
@@ -134,6 +147,43 @@ function stopPolling(): void {
   lastBlockReason = "";
 }
 
+function renderStatus(): HTMLElement {
+  const wrap = document.createElement("div");
+  const enabled = isAutoPrestigeEnabled();
+
+  const line1 = document.createElement("div");
+  line1.style.cssText = "display:flex;justify-content:space-between;gap:6px;margin-bottom:2px;";
+  const lvl = document.createElement("span");
+  lvl.innerHTML = `<span style="opacity:.55">Niveau</span> <strong>${currentLevel ?? "—"}</strong>`;
+  const status = document.createElement("span");
+  status.style.opacity = ".75";
+  status.textContent = !enabled ? "Désactivé" : inProgress ? "Appel en cours…" : "Actif";
+  line1.append(lvl, status);
+
+  const line2 = document.createElement("div");
+  line2.style.cssText = "font-size:10px;opacity:.75;";
+  line2.textContent = `🎯 ${getPrestigeGoal(currentLevel)}`;
+
+  wrap.append(line1, line2);
+
+  if (lastBlockReason) {
+    const line3 = document.createElement("div");
+    line3.style.cssText = "font-size:10px;color:#ffd85b;margin-top:2px;";
+    line3.textContent = `⏸ ${lastBlockReason}`;
+    wrap.append(line3);
+  }
+
+  if (lastActionResult) {
+    const line4 = document.createElement("div");
+    line4.style.cssText = "font-size:10px;margin-top:2px;";
+    line4.style.color = lastActionResult.startsWith("Succès") ? "#69e56f" : "#ff6767";
+    line4.textContent = `▶ ${lastActionResult}`;
+    wrap.append(line4);
+  }
+
+  return wrap;
+}
+
 export function registerAutoPrestigeMod(): void {
   REGISTERED_MODS.push({
     id: "farm-auto-prestige",
@@ -152,6 +202,7 @@ export function registerAutoPrestigeMod(): void {
         else stopPolling();
       },
     },
+    status: { render: renderStatus, intervalMs: 1500 },
     install: () => {
       if (isAutoPrestigeEnabled()) startPolling();
     },
