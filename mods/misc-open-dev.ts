@@ -2,6 +2,9 @@ import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-open-dev-enabled";
 
+let keepOpen = false;
+let enforceInterval: number | null = null;
+
 export function isOpenDevEnabled(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEY) === "true";
@@ -10,15 +13,41 @@ export function isOpenDevEnabled(): boolean {
   }
 }
 
-function showDevButton(): void {
+function enforce(): void {
+  if (!isOpenDevEnabled() || !keepOpen) return;
   const button = document.getElementById("devAuditBtn");
   if (button) button.removeAttribute("hidden");
+  const panel = document.getElementById("devAudit");
+  if (panel) panel.removeAttribute("hidden");
+}
+
+function startEnforce(): void {
+  if (enforceInterval !== null) return;
+  enforceInterval = window.setInterval(enforce, 150);
+  enforce();
+}
+
+function stopEnforce(): void {
+  if (enforceInterval !== null) {
+    window.clearInterval(enforceInterval);
+    enforceInterval = null;
+  }
+  keepOpen = false;
 }
 
 function openPanel(): void {
-  const panel = document.getElementById("devAudit");
-  if (panel) panel.removeAttribute("hidden");
-  showDevButton();
+  keepOpen = true;
+  enforce();
+}
+
+function togglePanel(): void {
+  if (keepOpen) {
+    const panel = document.getElementById("devAudit");
+    if (panel) panel.setAttribute("hidden", "");
+    stopEnforce();
+    return;
+  }
+  openPanel();
 }
 
 function renderStatus(): HTMLElement {
@@ -35,9 +64,9 @@ function renderStatus(): HTMLElement {
 
   const button = document.createElement("button");
   button.className = "wp-btn wp-primary";
-  button.textContent = "🔓 Open Dev Panel";
+  button.textContent = keepOpen ? "🔒 Close Dev Panel" : "🔓 Open Dev Panel";
   button.style.cssText = "font-size:10px;width:100%;";
-  button.onclick = openPanel;
+  button.onclick = togglePanel;
   wrap.append(warning, button);
   return wrap;
 }
@@ -56,10 +85,11 @@ export function registerOpenDevMod(): void {
         } catch {
           // Ignore unavailable local storage.
         }
-        if (value) showDevButton();
+        if (value) startEnforce();
+        else stopEnforce();
       },
     },
     status: { render: renderStatus, intervalMs: 2000 },
-    install: () => { if (isOpenDevEnabled()) showDevButton(); },
+    install: () => { if (isOpenDevEnabled()) startEnforce(); },
   });
 }
