@@ -3,7 +3,7 @@ import { REGISTERED_MODS } from "./registry";
 const STORAGE_KEY = "wildwood-mod-open-dev-enabled";
 
 let keepOpen = false;
-let enforceInterval: number | null = null;
+let observer: MutationObserver | null = null;
 
 export function isOpenDevEnabled(): boolean {
   try {
@@ -13,37 +13,50 @@ export function isOpenDevEnabled(): boolean {
   }
 }
 
-function enforce(): void {
-  if (!isOpenDevEnabled() || !keepOpen) return;
-  const button = document.getElementById("devAuditBtn");
-  if (button) button.removeAttribute("hidden");
-  const panel = document.getElementById("devAudit");
-  if (panel) panel.removeAttribute("hidden");
+function ensureObserver(): void {
+  if (observer) return;
+  observer = new MutationObserver(() => {
+    if (!keepOpen) return;
+    const button = document.getElementById("devAuditBtn");
+    if (button?.hasAttribute("hidden")) button.removeAttribute("hidden");
+    const panel = document.getElementById("devAudit");
+    if (panel?.hasAttribute("hidden")) panel.removeAttribute("hidden");
+  });
+  const targets = [
+    document.getElementById("devAudit"),
+    document.getElementById("devAuditBtn"),
+  ].filter((element): element is HTMLElement => element !== null);
+  for (const element of targets) {
+    observer.observe(element, { attributes: true, attributeFilter: ["hidden"] });
+  }
+  if (keepOpen) {
+    document.getElementById("devAudit")?.removeAttribute("hidden");
+    document.getElementById("devAuditBtn")?.removeAttribute("hidden");
+  }
 }
 
 function startEnforce(): void {
-  if (enforceInterval !== null) return;
-  enforceInterval = window.setInterval(enforce, 150);
-  enforce();
+  ensureObserver();
+  document.getElementById("devAuditBtn")?.removeAttribute("hidden");
 }
 
 function stopEnforce(): void {
-  if (enforceInterval !== null) {
-    window.clearInterval(enforceInterval);
-    enforceInterval = null;
-  }
   keepOpen = false;
+  document.getElementById("devAudit")?.setAttribute("hidden", "");
+  if (!isOpenDevEnabled()) document.getElementById("devAuditBtn")?.setAttribute("hidden", "");
+  observer?.disconnect();
+  observer = null;
 }
 
 function openPanel(): void {
   keepOpen = true;
-  enforce();
+  ensureObserver();
+  document.getElementById("devAudit")?.removeAttribute("hidden");
+  document.getElementById("devAuditBtn")?.removeAttribute("hidden");
 }
 
 function togglePanel(): void {
   if (keepOpen) {
-    const panel = document.getElementById("devAudit");
-    if (panel) panel.setAttribute("hidden", "");
     stopEnforce();
     return;
   }
