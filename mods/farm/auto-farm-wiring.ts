@@ -113,6 +113,10 @@ export function createAutoFarm(deps: AutoFarmWiringDeps) {
         return localStorage.getItem("wildwood-mod-auto-card-boss-mode") === "true";
       } catch { return false; }
     },
+    bossState: () => {
+      const boss = mapBoss();
+      return boss ? { alive: !boss.dead, dead: Boolean(boss.dead) } : null;
+    },
     ...farmProgress,
   });
 
