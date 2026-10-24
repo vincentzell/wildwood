@@ -3,7 +3,9 @@ import { ENEMY_TYPES } from "../src/game/enemies";
 import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-auto-quest-enabled";
+const COLLECT_GUILD_KEY = "wildwood-mod-auto-quest-collect-guild-enabled";
 const POLL_INTERVAL_MS = 10_000;
+const GUILD_RETRY_COOLDOWN_MS = 60_000;
 const QUEST_WAIT_MS = 60_000;
 const TRAVEL_WAIT_MS = 15_000;
 const TICK_MS = 2_000;
@@ -33,6 +35,12 @@ type WeeklyQuestState = {
 
 type CoopLike = {
   weeklyQuests?: () => WeeklyQuestState | null;
+  localIdentity?: () => string;
+  guild?: {
+    guildAction?: (
+      action: { kind: string; identity: string },
+    ) => Promise<{ ok?: boolean; error?: string }>;
+  };
   travelToMap?: (mapId: string) => Promise<boolean>;
   localState?: () => { mapId?: string; hp?: number } | null;
 };
@@ -43,6 +51,24 @@ function getCoop(): CoopLike | null {
     wildwoodCoop?: CoopLike;
   };
   return w.wildstatCoop ?? w.wildwoodCoop ?? null;
+}
+
+let lastGuildAttemptTs = 0;
+
+function isCollectGuildEnabled(): boolean {
+  try {
+    return localStorage.getItem(COLLECT_GUILD_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function setCollectGuildEnabled(value: boolean): void {
+  try {
+    localStorage.setItem(COLLECT_GUILD_KEY, String(value));
+  } catch {
+    // Ignore unavailable local storage.
+  }
 }
 
 export function isAutoQuestEnabled(): boolean {
@@ -58,6 +84,35 @@ function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
   return data.quests.filter(q => q.progress < q.target && !q.takenBy && !q.from);
+}
+
+async function tryCollectGuild(coop: CoopLike): Promise<void> {
+  if (!isCollectGuildEnabled()) return;
+  if (Date.now() - lastGuildAttemptTs < GUILD_RETRY_COOLDOWN_MS) return;
+  const data = coop.weeklyQuests?.();
+  if (!data?.quests || !data.guildName) return;
+  const perso = data.quests.filter(quest => !quest.from);
+  const collected = data.quests.filter(quest => quest.from);
+  if (perso.length === 0) return;
+  const allDone = perso.every(quest => quest.progress >= quest.target);
+  if (!allDone) return;
+  const notTaken = perso.every(quest => !quest.takenBy || quest.progress >= quest.target);
+  if (!notTaken) return;
+  if (collected.length >= 15) return;
+  const identity = coop.localIdentity?.();
+  if (!identity || !coop.guild?.guildAction) return;
+
+  lastGuildAttemptTs = Date.now();
+  try {
+    const result = await coop.guild.guildAction({ kind: "collectQuests", identity });
+    if (result?.ok) {
+      console.info(`[mod-auto-quest] guild quests collectées (${collected.length}/15)`);
+    } else {
+      console.warn(`[mod-auto-quest] collecte guild refusée : ${result?.error ?? "sans message"}`);
+    }
+  } catch (error) {
+    console.warn("[mod-auto-quest] collecte guild exception", error);
+  }
 }
 
 function ensureFarmPanelOpen(): boolean {
@@ -198,6 +253,7 @@ async function runLoop(coop: CoopLike): Promise<void> {
       const quests = activeQuests(coop);
       if (quests.length === 0) {
         currentPhase = "waiting";
+        await tryCollectGuild(coop);
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
         continue;
       }
@@ -251,6 +307,16 @@ function renderStatus(): HTMLElement {
     : "advance=ABSENT";
   stateLine.textContent = (isAutoQuestEnabled() ? stateMap[currentPhase] : "Désactivé") + " · " + advanceState;
   wrap.append(stateLine);
+
+  const guildRow = document.createElement("label");
+  guildRow.style.cssText =
+    "display:flex;align-items:center;gap:4px;margin:4px 0;font-size:10px;cursor:pointer;";
+  const guildCheckbox = document.createElement("input");
+  guildCheckbox.type = "checkbox";
+  guildCheckbox.checked = isCollectGuildEnabled();
+  guildCheckbox.addEventListener("change", () => setCollectGuildEnabled(guildCheckbox.checked));
+  guildRow.append(guildCheckbox, document.createTextNode("Collect guild quests"));
+  wrap.append(guildRow);
 
   const coop = getCoop();
   const quests = coop ? activeQuests(coop) : [];
