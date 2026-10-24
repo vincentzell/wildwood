@@ -155,6 +155,7 @@ export function installModMenu(): void {
 
   function renderCard(mod: Mod): HTMLElement {
     const card = document.createElement("div");
+    card.dataset.modCard = mod.id;
     Object.assign(card.style, {
       border: "1px solid rgba(255,255,255,.15)",
       borderRadius: "4px",
@@ -302,7 +303,18 @@ export function installModMenu(): void {
   renderCollapsed();
   window.setInterval(() => {
     if (collapsed) return;
-    for (const update of statusRefreshers.values()) update();
+    const active = document.activeElement;
+    for (const [modId, update] of statusRefreshers.entries()) {
+      const card = document.querySelector<HTMLElement>(
+        `[data-mod-card="${modId}"]`
+      );
+      if (!card) continue;
+      if (active && card.contains(active)
+          && active.matches("input, select, textarea")) {
+        continue;
+      }
+      update();
+    }
   }, 1_500);
   render();
 }
