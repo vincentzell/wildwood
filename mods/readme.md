@@ -45,9 +45,9 @@ attendu est :
 
 - [Contexte du fork](#contexte-du-fork)
 - [Structure](#structure)
+- [Mods disponibles](#mods-disponibles)
 - [Ajouter un mod](#ajouter-un-mod)
 - [Patch à re-appliquer après un sync upstream](#patch-à-re-appliquer-après-un-sync-upstream)
-- [Mod qui copie `src/` : Auto Kiting](#mod-qui-copie-src--auto-kiting)
 - [Déploiement](#déploiement)
 - [Conventions](#conventions)
 
@@ -55,18 +55,58 @@ attendu est :
 
 ```
 mods/
-├── registry.ts                  # type Mod, REGISTERED_MODS
-├── index.ts                     # installAllMods() — point d'entrée unique
-├── modmenu.ts                   # panneau flottant, onglets, cartes, switches
-├── farm-auto-kiting.ts          # switch du mod Auto Kiting
-├── farm-auto-prestige.ts        # Auto Prestige
-├── misc-auto-ad.ts              # Auto Ad (reward silencieuse)
-├── misc-daily-gems.ts           # Auto Claim Daily Gems
-├── farm/                        # copies moddées du runtime auto-farm
-│   ├── auto-farm-wiring.ts      # copie de src/game/runtime/auto-farm/
-│   └── auto-farm-controller.ts  # copie + injection du bloc evasion()
-└── README.md
+├── README.md
+├── registry.ts # type Mod, REGISTERED_MODS
+├── index.ts # installAllMods() — point d'entrée unique
+├── modmenu.ts # menu flottant, onglets, cartes, switches, status
+├── card-farming-core.ts # runner partagé des 2 mods CARD
+│
+├── farm-auto-kiting.ts # FARM — Auto Kiting
+├── farm-auto-prestige.ts # FARM — Auto Prestige
+├── farm-auto-boss.ts # FARM — Auto Farm Boss
+├── quest-auto-quest.ts # QUEST — Auto Quest
+├── card-auto-farm.ts # CARD — Auto Farm All Cards
+├── card-auto-target.ts # CARD — Auto Farm Target Cards
+├── misc-auto-ad.ts # MISC — Auto Ad
+├── misc-daily-gems.ts # MISC — Auto Daily Gems
+│
+└── farm/ # copies moddées du runtime auto-farm
+    ├── auto-farm-wiring.ts # wiring + repeatBoss flag
+    └── auto-farm-controller.ts # + evasion() + repeatBoss + bossDeathOnMap
 ```
+
+## Mods disponibles
+
+| Catégorie | Nom | Description |
+|---|---|---|
+| FARM | Auto Kiting | Kite les ennemis mêlée + dodge les projectiles ennemis. Ignore les AOE boss (décision v1). |
+| FARM | Auto Prestige | Déclenche le prestige via API quand le boss/endless requis est complété (poll `bossRewardClaims` + `proceduralCompleted`). |
+| FARM | Auto Farm Boss | Voyage vers une map de campagne choisie et farme son boss en boucle (mode `repeatBoss` du contrôleur copié). |
+| QUEST | Auto Quest | Navigue via `travelToMap` vers la map de la première quête hebdo active, active le groupe d'aggro natif, farm jusqu'au drop, passe à la suivante. |
+| CARD | Auto Farm All Cards | Boucle par map : boss d'abord, puis multi-aggro sur les stats des mobs manquants. Champ copies configurable. Pity tracker local. |
+| CARD | Auto Farm Target Cards | Idem All Cards mais sur une liste de cartes choisie via dropdown. Bouton Clear + champ copies. |
+| MISC | Auto Ad | Réclame la récompense pub via `coop.claimAdGems()` (voie API, pas de pub affichée). |
+| MISC | Auto Daily Gems | Réclame le bonus daily via `coop.claimDailyGemBonus()` dès que `dailyGemBonusClaimable()` retourne true. |
+
+Exclusion mutuelle : activer Auto Farm All Cards désactive Auto
+Farm Target Cards (et inversement), car les deux utilisent le même
+panneau auto-farm natif et le même flag `repeatBoss` du contrôleur.
+
+### Clés localStorage importantes
+
+- `wildwood-mod-modmenu-position` — position du panneau Mods
+- `wildwood-mod-modmenu-tab` — onglet actif
+- `wildwood-mod-<id>-enabled` — état du switch par mod (ne jamais renommer)
+- `wildwood-mod-auto-{all,target}-copies` — copies cibles par mod CARD
+- `wildwood-mod-auto-card-{all,target}-boss-mode` — flag repeatBoss (lu par le wiring)
+- `wildwood-mod-auto-{all,target}-pity` — mirror local du pity meter
+- `wildwood-mod-auto-card-target-list` — IDs des cartes ciblées (Target)
+
+Pity tracker : mirror local du meter serveur (`player_card_meter`
+non exposé). Se remplit au kill via un hook `Storage.setItem` sur
+les écritures `wildstat-enemy-defeats-v2:*`. `resetPity` au drop
+détecté. N'affecte pas le pity serveur — c'est cosmétique pour
+l'affichage.
 
 ## Ajouter un mod
 
@@ -166,6 +206,36 @@ import { createAutoFarm } from "../mods/farm/auto-farm-wiring";
 son switch n'a aucun effet (le contrôleur d'origine est utilisé, qui
 ne lit pas `isAutoDodgeEnabled()`).
 
+### 4. Patch du contrôleur copié
+
+`mods/farm/auto-farm-controller.ts` n'est pas une copie pure de
+`src/`. Il contient 3 patches, à ré-appliquer si on resynchronise
+depuis `src/` :
+
+1. **`evasion()` + helpers** (`standableNow`, `dangerNow`,
+   `aroundBoss`, `reaches`, `steer`, `worthAvoiding`, `kiteWorth`,
+   `evadePoint` local, constante `DODGE_PAD = 12`) — pour Auto
+   Kiting. Appelé conditionnellement par `isAutoDodgeEnabled()`.
+
+2. **Mode `repeatBoss`** (option `repeatBoss?: () => boolean`) —
+   quand true : `bossWanted()` ignore `bossBeaten()`, et
+   `choosePhaseNow()` intercepte l'après-victoire pour attendre le
+   respawn (`waitingForBossRespawn`) au lieu de passer en portal.
+
+3. **`bossDeathOnMap`** — mémorise la map où un boss a été combattu
+   pendant la visite, pour que le mode repeatBoss reste actif même
+   quand `mapBoss()` retourne null (boss mort).
+
+Le flag repeatBoss est piloté via `localStorage`
+(`wildwood-mod-auto-card-all-boss-mode` OU
+`wildwood-mod-auto-card-target-boss-mode`), lu par
+`mods/farm/auto-farm-wiring.ts` dans l'option `repeatBoss`.
+
+Pour resynchroniser depuis `src/game/runtime/auto-farm/` :
+copier le fichier, réécrire les imports (`../../src/...`), puis
+ré-appliquer ces 3 patches. Les sections `[repeatBoss]` sont
+délimitées par des commentaires `// Mode repeatBoss` dans le code.
+
 ### Vérification rapide
 
 ```bash
@@ -183,52 +253,6 @@ Puis :
 npm run typecheck:coop
 npm run build:client
 ```
-
-## Mod qui copie `src/` : Auto Kiting
-
-Auto Kiting est le seul mod qui a besoin de modifier du code de `src/`.
-Plutôt que de patcher `src/game/runtime/auto-farm/` (ce qui créerait
-un conflit à chaque sync), on maintient une **copie** dans `mods/farm/` :
-
-- `mods/farm/auto-farm-wiring.ts` — copie de
-  `src/game/runtime/auto-farm/auto-farm-wiring.ts`, avec les imports
-  réécrits (`../../src/...` au lieu de `../...`).
-- `mods/farm/auto-farm-controller.ts` — copie de
-  `src/game/runtime/auto-farm/auto-farm-controller.ts`, avec :
-  - imports réécrits,
-  - ajout du bloc `evasion()` + helpers (`standableNow`, `dangerNow`,
-    `aroundBoss`, `reaches`, `steer`, `worthAvoiding`, `kiteWorth`),
-  - ajout de la constante locale `DODGE_PAD = 12`,
-  - ajout de l'appel `if (isAutoDodgeEnabled()) { const ev = evasion(...); if (ev) return ev; }` dans `movement()`,
-  - ajout de l'option `enemyShots` aux options du contrôleur.
-
-**Si `src/game/runtime/auto-farm/` évolue upstream** et que le mod Auto
-Kiting se met à mal fonctionner (crash, comportement anormal, kite qui
-ne se déclenche plus), la copie a divergé. Pour resynchroniser :
-
-```bash
-cp src/game/runtime/auto-farm/auto-farm-wiring.ts mods/farm/auto-farm-wiring.ts
-cp src/game/runtime/auto-farm/auto-farm-controller.ts mods/farm/auto-farm-controller.ts
-```
-
-Puis ré-appliquer les adaptations manuelles :
-
-1. Dans les deux copies : réécrire tous les imports relatifs (règle :
-   `./X` → `../../src/game/runtime/auto-farm/X`, `../X` →
-   `../../src/game/runtime/X`, `../../X` → `../../src/game/X`,
-   `../../../../shared/X` → `../../shared/X`).
-2. Dans `auto-farm-wiring.ts` : ajouter au passage
-   `enemyShots: deps.world.enemyShots,` dans les options du contrôleur.
-3. Dans `auto-farm-controller.ts` : ré-injecter le bloc `evasion()` et
-   l'appel dans `movement()`. Le code exact se trouve dans le dernier
-   commit qui touche `mods/farm/auto-farm-controller.ts` (voir
-   `git log mods/farm/`).
-
-Si le mod devient trop difficile à maintenir face aux changements
-upstream, la sortie de secours est de **désactiver le mod** (retirer
-`registerFarmAutoKitingMod()` de `mods/index.ts` et restaurer l'import
-`createAutoFarm` vers `./game/runtime/auto-farm/auto-farm-wiring`)
-sans rien casser d'autre.
 
 ## Déploiement
 
