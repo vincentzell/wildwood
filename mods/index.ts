@@ -1,6 +1,7 @@
 // mods/index.ts
 import { installModMenu } from "./modmenu";
 import { registerFarmAutoDodgeMod } from "./farm-auto-kiting";
+import { registerAutoRetreatRegenMod } from "./farm-auto-retreat-regen";
 import { registerAutoPrestigeMod } from "./farm-auto-prestige";
 import { registerAutoAdMod } from "./misc-auto-ad";
 import { registerDailyGemsMod } from "./misc-daily-gems";
@@ -15,6 +16,7 @@ import { REGISTERED_MODS } from "./registry";
 
 export function installAllMods(): void {
   registerFarmAutoDodgeMod();
+  registerAutoRetreatRegenMod();
   registerAutoPrestigeMod();
   registerAutoAdMod();
   registerDailyGemsMod();
