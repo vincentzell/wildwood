@@ -8,6 +8,8 @@ import { registerAutoQuestMod } from "./quest-auto-quest";
 import { registerAutoFarmBossMod } from "./farm-auto-boss";
 import { registerAutoFarmAllCardsMod } from "./card-auto-farm";
 import { registerAutoFarmTargetCardsMod } from "./card-auto-target";
+import { registerAutoTechTreeMod } from "./misc-auto-tech-tree";
+import { registerAutoUpgradeMod } from "./misc-auto-upgrade";
 import { REGISTERED_MODS } from "./registry";
 
 export function installAllMods(): void {
@@ -19,6 +21,8 @@ export function installAllMods(): void {
   registerAutoFarmBossMod();
   registerAutoFarmAllCardsMod();
   registerAutoFarmTargetCardsMod();
+  registerAutoTechTreeMod();
+  registerAutoUpgradeMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
   installModMenu();
 }
