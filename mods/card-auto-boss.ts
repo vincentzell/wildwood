@@ -20,7 +20,14 @@ const BOSS_MAPS: BossMap[] = CAMPAIGN_MAPS.map(map => ({ id: map.id, name: map.n
 let phase: Phase = "idle";
 let statusMessage = "";
 let intervalId: number | null = null;
-let ticking = false;
+/**
+ * Map sur laquelle on a déjà configuré le panneau auto-farm dans
+ * cette session. Évite de réouvrir/reconfigurer à chaque tick.
+ */
+let panelHandledForMap: string | null = null;
+
+/** Garde anti-réentrance : un tick à la fois. */
+let tickInProgress = false;
 
 function getCoop(): CoopLike | null {
   const w = window as unknown as {
@@ -66,26 +73,6 @@ function setRepeatBoss(value: boolean): void {
   }
 }
 
-function ensureAutoFarmStarted(): boolean {
-  const sheet = document.getElementById("autoFarmSheet");
-  const content = sheet?.querySelector<HTMLElement>("#autoFarmContent");
-  if (!sheet || !content) return false;
-  if (content.hidden) sheet.querySelector<HTMLButtonElement>(".farm-toggle")?.click();
-
-  const advance = sheet.querySelector<HTMLElement>('[data-switch="advance"]');
-  if (advance?.getAttribute("aria-checked") !== "true") advance?.click();
-  if (sheet.classList.contains("is-farming")) return true;
-
-  const start = sheet.querySelector<HTMLButtonElement>(".farm-start");
-  if (!start) return false;
-  if (start.disabled) {
-    sheet.querySelector<HTMLButtonElement>('.farm-weights [data-mode="farm"]')?.click();
-  }
-  if (start.disabled) return false;
-  start.click();
-  return sheet.classList.contains("is-farming");
-}
-
 async function travelToMap(coop: CoopLike, map: BossMap): Promise<boolean> {
   if (!coop.travelToMap) {
     statusMessage = "API de voyage indisponible";
@@ -119,8 +106,9 @@ async function travelToMap(coop: CoopLike, map: BossMap): Promise<boolean> {
 }
 
 async function tick(): Promise<void> {
-  if (ticking || !isEnabled()) return;
-  ticking = true;
+  if (tickInProgress) return;
+  if (!isEnabled()) return;
+  tickInProgress = true;
   try {
     statusMessage = "";
     const coop = getCoop();
@@ -129,21 +117,73 @@ async function tick(): Promise<void> {
       statusMessage = "API coop indisponible";
       return;
     }
-    const map = selectedMap();
-    if (coop.localState?.()?.mapId !== map.id) {
+    const targetMap = selectedMap().id;
+    const current = coop.localState?.()?.mapId;
+
+    if (current !== targetMap) {
       phase = "traveling";
-      setRepeatBoss(false);
-      if (!(await travelToMap(coop, map))) {
-        if (isEnabled() && selectedMap().id === map.id) phase = "unavailable";
+      if (panelHandledForMap !== targetMap) {
+        panelHandledForMap = null;
+        setRepeatBoss(false);
+      }
+      const map = BOSS_MAPS.find(candidate => candidate.id === targetMap) ?? BOSS_MAPS[0];
+      const ok = await travelToMap(coop, map);
+      if (!ok) {
+        if (isEnabled() && selectedMap().id === targetMap) phase = "unavailable";
         return;
       }
-      if (!isEnabled() || selectedMap().id !== map.id) return;
+      if (!isEnabled() || selectedMap().id !== targetMap) return;
+      setRepeatBoss(true);
+      phase = "farming";
+      return;
     }
 
     setRepeatBoss(true);
-    phase = ensureAutoFarmStarted() ? "farming" : "unavailable";
+    phase = "farming";
+
+    if (panelHandledForMap === targetMap) return;
+    const sheet = document.getElementById("autoFarmSheet");
+    if (!sheet) {
+      phase = "unavailable";
+      statusMessage = "Panneau Auto Farm indisponible";
+      return;
+    }
+    const content = sheet.querySelector<HTMLElement>("#autoFarmContent");
+    const wasHidden = content?.hidden ?? true;
+    panelHandledForMap = targetMap;
+
+    if (wasHidden) {
+      sheet.querySelector<HTMLButtonElement>(".farm-toggle")?.click();
+      await new Promise(resolve => window.setTimeout(resolve, 300));
+    }
+
+    const advance = sheet.querySelector<HTMLElement>('[data-switch="advance"]');
+    if (advance?.getAttribute("aria-checked") !== "true") advance?.click();
+
+    let started = sheet.classList.contains("is-farming");
+    if (!started) {
+      const start = sheet.querySelector<HTMLButtonElement>(".farm-start");
+      if (start?.disabled) {
+        sheet.querySelector<HTMLButtonElement>('.farm-weights [data-mode="farm"]')?.click();
+      }
+      if (start && !start.disabled) {
+        start.click();
+        started = sheet.classList.contains("is-farming");
+      }
+    }
+
+    if (wasHidden) {
+      await new Promise(resolve => window.setTimeout(resolve, 300));
+      if (content && !content.hidden) {
+        sheet.querySelector<HTMLButtonElement>(".farm-toggle")?.click();
+      }
+    }
+    if (!started) {
+      phase = "unavailable";
+      statusMessage = "Démarrage d'Auto Farm impossible";
+    }
   } finally {
-    ticking = false;
+    tickInProgress = false;
   }
 }
 
@@ -163,6 +203,7 @@ function stopPolling(): void {
   phase = "idle";
   statusMessage = "";
   setRepeatBoss(false);
+  panelHandledForMap = null;
 }
 
 function renderStatus(): HTMLElement {
