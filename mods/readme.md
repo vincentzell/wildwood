@@ -192,6 +192,14 @@ Après le dernier `install*()` (typiquement
 installAllMods();
 ```
 
+### 2bis. Exposer `bossController` à Auto Farm
+
+Dans `createAutoFarm({...})`, ajouter au bloc `later` :
+
+```ts
+bossController: () => bossController,
+```
+
 ### 3. Redirection de `createAutoFarm` (mod Auto Kiting uniquement)
 
 Chercher :

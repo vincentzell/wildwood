@@ -3,6 +3,7 @@ import { createAutoFarmResumeStore } from "../../src/app/auto-farm-resume";
 import type { MapId } from "../../src/game/world";
 import { bossStateForMap } from "../../src/game/runtime/boss/boss-registry";
 import type { createProceduralBossController } from "../../src/game/runtime/boss/procedural-boss-controller";
+import type { BossController } from "../../src/game/runtime/boss/boss-controller";
 import type { CoopAccess } from "../../src/game/runtime/coop-access";
 import type { createGameBootstrap } from "../../src/game/runtime/game-bootstrap";
 import type { createMapController } from "../../src/game/runtime/map-controller";
@@ -26,6 +27,7 @@ export type AutoFarmWiringDeps = {
     session: () => { isRunning: () => boolean; isPaused: () => boolean } | undefined;
     mapController: () => Pick<ReturnType<typeof createMapController>, "isMapTransitioning" | "isCutsceneActive" | "portalIsUnlocked" | "serverMovePending">;
     proceduralBoss: () => Pick<ReturnType<typeof createProceduralBossController>, "boss">;
+    bossController?: () => Pick<BossController, "forMap">;
     playerCombat: () => { feedsOnAdds: () => boolean };
     research: () => Pick<ReturnType<typeof createResearchController>, "ranks" | "rewardMultiplier" | "criticalChance" | "criticalDamageMultiplier">;
     soulCritDamage: () => number;
@@ -85,6 +87,12 @@ export function createAutoFarm(deps: AutoFarmWiringDeps) {
     resumeStore: createAutoFarmResumeStore(),
     player, enemies, spawnSites,
     enemyShots: deps.world.enemyShots,
+    bossDanger: (x, y, pad) => {
+      const controller = later.bossController?.();
+      if (!controller) return Infinity;
+      const behaviour = controller.forMap(currentMapId());
+      return behaviour?.danger(x, y, pad) ?? Infinity;
+    },
     mapId: currentMapId,
     pullCamps: () => client?.aggroChallenge?.()?.active ? 0
       : aggroPullCamps(client?.bonusOff?.().includes("challenge.aggro") ? null : client?.aggroChallenge?.()),

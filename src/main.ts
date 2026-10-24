@@ -357,6 +357,7 @@ import { MAX_PLAYER_STAT, PLAYER_SPAWN } from "../shared/rules";
     connection: () => farmConnection,
     later: {
       session: () => session, mapController: () => mapController, proceduralBoss: () => proceduralBoss,
+      bossController: () => bossController,
       playerCombat: () => playerCombat, research: () => research, soulCritDamage: () => soulDimension.critDamage(),
       rewardContext: () => rewardLabelContext(),
     },

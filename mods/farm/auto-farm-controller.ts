@@ -150,6 +150,7 @@ export function createAutoFarmController(options: {
   /** The same for this map's boss, for when no locked map is behind it; null when it cannot tell, and the boss's power is used. */
   bossReady?: (margin: number) => Readiness | null | undefined;
   enemyShots?: readonly EnemyShot[];
+  bossDanger?: (x: number, y: number, pad: number) => number;
   /** This map's boss while it stands (null once it is down or respawning). */
   mapBoss?: () => (Fight & { dead?: boolean }) | null;
   /** Reflect Only: the bow does nothing, so enemies must be stood among to be hit and hit back. */
@@ -441,10 +442,16 @@ export function createAutoFarmController(options: {
     !options.reflectOnly?.() &&
     (player.hp < player.maxHp || damage >= player.maxHp * BITE_SHARE);
 
+  const bossDangerAt = (point: Position) =>
+    options.bossDanger?.(point.x, point.y, DODGE_PAD) ?? Infinity;
+
   function dangerNow() {
     const shots = (options.enemyShots ?? []).filter(shot => worthAvoiding(shot.damage));
     return (point: Position) =>
-      shots.length ? shotDanger(shots, point, player.r + DODGE_PAD) : Infinity;
+      Math.min(
+        bossDangerAt(point),
+        shots.length ? shotDanger(shots, point, player.r + DODGE_PAD) : Infinity,
+      );
   }
 
   function standableNow() {
