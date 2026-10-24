@@ -110,7 +110,8 @@ export function createAutoFarm(deps: AutoFarmWiringDeps) {
     },
     repeatBoss: () => {
       try {
-        return localStorage.getItem("wildwood-mod-auto-card-boss-mode") === "true";
+        return localStorage.getItem("wildwood-mod-auto-card-all-boss-mode") === "true"
+          || localStorage.getItem("wildwood-mod-auto-card-target-boss-mode") === "true";
       } catch { return false; }
     },
     bossState: () => {

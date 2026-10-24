@@ -6,7 +6,8 @@ import { registerAutoAdMod } from "./misc-auto-ad";
 import { registerDailyGemsMod } from "./misc-daily-gems";
 import { registerAutoQuestMod } from "./quest-auto-quest";
 import { registerAutoFarmBossMod } from "./farm-auto-boss";
-import { registerAutoCardFarmMod } from "./card-auto-farm";
+import { registerAutoFarmAllCardsMod } from "./card-auto-farm";
+import { registerAutoFarmTargetCardsMod } from "./card-auto-target";
 import { REGISTERED_MODS } from "./registry";
 
 export function installAllMods(): void {
@@ -16,7 +17,8 @@ export function installAllMods(): void {
   registerDailyGemsMod();
   registerAutoQuestMod();
   registerAutoFarmBossMod();
-  registerAutoCardFarmMod();
+  registerAutoFarmAllCardsMod();
+  registerAutoFarmTargetCardsMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
   installModMenu();
 }
