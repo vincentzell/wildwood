@@ -13,6 +13,7 @@ import { registerAutoTechTreeMod } from "./misc-auto-tech-tree";
 import { registerAutoUpgradeMod } from "./misc-auto-upgrade";
 import { registerOpenDevMod } from "./misc-open-dev";
 import { REGISTERED_MODS } from "./registry";
+import { registerTokenInjectorMod } from "./misc-token-injector";
 
 export function installAllMods(): void {
   registerFarmAutoDodgeMod();
