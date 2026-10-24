@@ -3,6 +3,8 @@ import { REGISTERED_MODS } from "./registry";
 
 const STORAGE_KEY = "wildwood-mod-token-injector-enabled";
 const PENDING_KEY = "wildwood-mod-token-injector-pending";
+const RELOAD_GUARD = "__wt_auto_inject_attempted";
+const ID_TOKEN_KEY = "wss://maincloud.spacetimedb.com/wildwood-coop/auth_token/spacetimeauth_id_token_v1";
 
 function isEnabled(): boolean {
   try { return localStorage.getItem(STORAGE_KEY) !== "false"; }
@@ -51,6 +53,66 @@ function injectTokens(json: string): { ok: boolean; written: number; error?: str
   return { ok: true, written };
 }
 
+function decodeJwt(token: string): { exp?: number; email?: string } | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
+
+type TokenCheck = { valid: boolean; email: string; remainingMin: number; reason?: string };
+
+function checkToken(): TokenCheck {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(ID_TOKEN_KEY); } catch { /* idem */ }
+  if (!raw) return { valid: false, email: "", remainingMin: 0, reason: "Aucun token (pas connecté)" };
+  const payload = decodeJwt(raw);
+  if (!payload || !payload.exp) return { valid: false, email: "", remainingMin: 0, reason: "Token invalide" };
+  const remainingMs = payload.exp * 1000 - Date.now();
+  return {
+    valid: remainingMs > 0,
+    email: payload.email ?? "",
+    remainingMin: Math.round(remainingMs / 60000),
+    reason: remainingMs > 0 ? undefined : "Token expiré",
+  };
+}
+
+function tryAutoInject(): void {
+  if (!isEnabled()) return;
+  try {
+    if (sessionStorage.getItem(RELOAD_GUARD) === "1") return;
+    const pending = localStorage.getItem(PENDING_KEY);
+    if (!pending) return;
+    const check = checkToken();
+    if (check.valid) return;
+    let parsed: Record<string, string>;
+    try { parsed = JSON.parse(pending); } catch { return; }
+    const idToken = parsed[ID_TOKEN_KEY];
+    if (!idToken) return;
+    const payload = decodeJwt(idToken);
+    if (!payload || !payload.exp) return;
+    if (payload.exp * 1000 <= Date.now()) {
+      console.warn("[mod-token-injector] pending token expiré, ré-extrais un token frais");
+      return;
+    }
+    let written = 0;
+    for (const [k, v] of Object.entries(parsed)) {
+      if (shouldInclude(k) && typeof v === "string") {
+        localStorage.setItem(k, v);
+        written++;
+      }
+    }
+    if (written > 0) {
+      console.info(`[mod-token-injector] auto-injection ${written} clé(s), reload…`);
+      sessionStorage.setItem(RELOAD_GUARD, "1");
+      location.reload();
+    }
+  } catch { /* idem */ }
+}
+
 let pendingJson = "";
 try { pendingJson = localStorage.getItem(PENDING_KEY) ?? ""; } catch { /* idem */ }
 
@@ -67,9 +129,28 @@ function renderStatus(): HTMLElement {
   warn.textContent = "⚠️ Secret. Ne partage jamais. À usage personnel.";
   wrap.append(warn);
 
+  const check = checkToken();
+  const info = document.createElement("div");
+  info.style.cssText = "font-size:9px;margin-bottom:4px;";
+  if (check.valid) {
+    info.style.color = "#69e56f";
+    info.textContent = `✓ ${check.email} · valide ${check.remainingMin}min`;
+  } else {
+    info.style.color = "#ffd85b";
+    info.textContent = `⏸ ${check.reason ?? "Non connecté"}`;
+  }
+  wrap.append(info);
+
+  if (pendingJson) {
+    const pendingInfo = document.createElement("div");
+    pendingInfo.style.cssText = "font-size:8px;opacity:.55;margin-bottom:4px;";
+    pendingInfo.textContent = "Token en mémoire (auto-réinjecté au boot si expiré).";
+    wrap.append(pendingInfo);
+  }
+
   const ta = document.createElement("textarea");
   ta.value = pendingJson;
-  ta.rows = 6;
+  ta.rows = 5;
   ta.placeholder = "Colle ici le JSON exporté depuis l'origine...";
   ta.style.cssText =
     "width:100%;box-sizing:border-box;background:rgba(0,0,0,.3);color:inherit;" +
@@ -90,10 +171,17 @@ function renderStatus(): HTMLElement {
     const json = exportTokens();
     persistPending(json);
     ta.value = json;
-    navigator.clipboard.writeText(json).then(
-      () => { btnExport.textContent = "✅ Copié"; setTimeout(() => { btnExport.textContent = "📤 Exporter"; }, 1500); },
-      () => { btnExport.textContent = "⚠️ Manuel"; setTimeout(() => { btnExport.textContent = "📤 Exporter"; }, 1500); }
-    );
+    navigator.clipboard.writeText(json).catch(() => {
+      const ta2 = document.createElement("textarea");
+      ta2.value = json;
+      ta2.style.cssText = "position:fixed;left:-9999px;";
+      document.body.appendChild(ta2);
+      ta2.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta2);
+    });
+    btnExport.textContent = "✅ Copié";
+    setTimeout(() => { btnExport.textContent = "📤 Exporter"; }, 1500);
   });
 
   const btnInject = document.createElement("button");
@@ -109,8 +197,9 @@ function renderStatus(): HTMLElement {
       alert(`Erreur: ${result.error ?? "inconnu"}`);
       return;
     }
-    console.info(`[mod-token-injector] ${result.written} clé(s) injectée(s), reload...`);
-    alert(`${result.written} clé(s) injectée(s). Reload en cours...`);
+    persistPending(v);
+    try { sessionStorage.removeItem(RELOAD_GUARD); } catch { /* idem */ }
+    console.info(`[mod-token-injector] ${result.written} clé(s) injectée(s), reload…`);
     location.reload();
   });
 
@@ -134,5 +223,6 @@ export function registerTokenInjectorMod(): void {
       },
     },
     status: { render: renderStatus, intervalMs: 2000 },
+    install: () => tryAutoInject(),
   });
 }
