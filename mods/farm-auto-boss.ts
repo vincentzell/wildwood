@@ -233,11 +233,11 @@ function renderStatus(): HTMLElement {
   return wrap;
 }
 
-export function registerAutoCardBossMod(): void {
+export function registerAutoFarmBossMod(): void {
   REGISTERED_MODS.push({
-    id: "card-auto-boss",
-    name: "Auto Card Boss",
-    category: "CARD",
+    id: "farm-auto-boss",
+    name: "Auto Farm Boss",
+    category: "FARM",
     switch: {
       label: "On",
       get: isEnabled,
