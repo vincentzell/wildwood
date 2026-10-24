@@ -182,6 +182,13 @@ export function createAutoFarmController(options: {
    * que le boss respawn. Utilisé par Auto Card.
    */
   repeatBoss?: () => boolean;
+  /**
+   * État du boss de la map courante, incluant les boss
+   * morts en attente de respawn. Utilisé en mode repeatBoss pour
+   * décider de rester sur place plutôt que de partir en portal.
+   * Retourne null si la map n'a pas de boss.
+   */
+  bossState?: () => { alive: boolean; dead: boolean; respawnAtMs?: number } | null;
 }) {
   const { player, enemies, spawnSites } = options;
   const now = options.now ?? monotonicNowMs;
@@ -209,6 +216,13 @@ export function createAutoFarmController(options: {
   const opensNothing = new Set<string>();
   let bossWin: { mapId: string; at: number } | null = null;
   let waitingForBossRespawn = false;
+  /**
+   * Map sur laquelle un boss a été combattu (ou est actuellement
+   * combattu) pendant cette visite. Utilisé en mode repeatBoss pour
+   * rester sur place après un kill, même quand `bossState()` retourne
+   * null (boss mort en attente de respawn).
+   */
+  let bossDeathOnMap: string | null = null;
   /** The map whose boss it beat this visit: Move On then goes at once instead of finishing the fight around it. */
   let bossBeatenOn: string | null = null;
   let planClock = 0;
@@ -583,6 +597,12 @@ export function createAutoFarmController(options: {
   const bossNeeds = () => (options.bossPower?.() ?? options.mapPower?.(options.mapId()) ?? 0) * movePower;
   /** Beaten, as far as it can tell: the way forward it holds is open, or a win here opened nothing. */
   const bossBeaten = () => options.bossUnlocksNext?.() === false || opensNothing.has(options.mapId());
+  function currentBossState() {
+    const state = options.bossState?.();
+    if (state !== undefined) return state;
+    const boss = options.mapBoss?.();
+    return boss ? { alive: !boss.dead, dead: Boolean(boss.dead) } : null;
+  }
   /** Whether to fight the boss now: Fight Bosses on, a boss standing that is not beaten, and power enough (a fight under way goes on). */
   /** A fight that ended with the boss gone was won: whether that opened anything is read a few seconds on. */
   function noteBossWin() {
@@ -809,6 +829,9 @@ export function createAutoFarmController(options: {
     if (!healthAsked) healthWaitSince = null;
   }
   function choosePhaseNow(dt: number) {
+    if (bossDeathOnMap && bossDeathOnMap !== options.mapId()) {
+      bossDeathOnMap = null;
+    }
     noteBossWin();
     const portal = exitPortal();
     const afterBoss = bossBeatenOn === options.mapId();
@@ -816,11 +839,15 @@ export function createAutoFarmController(options: {
     // boss existe sur cette map. On force soit le combat, soit
     // l'attente.
     if (options.repeatBoss?.() && advance) {
-      const boss = options.mapBoss?.();
-      if (boss) {
+      const state = currentBossState();
+      const currentMap = options.mapId();
+      // On reste en mode repeatBoss si un boss existe ou a été combattu sur cette map.
+      const hasBoss = (state !== null && state !== undefined) || bossDeathOnMap === currentMap;
+      if (hasBoss) {
         if (bossWanted()) {
           waitingForBossRespawn = false;
           phase = 'boss';
+          bossDeathOnMap = options.mapId();
           travellingTo = null;
           return;
         }
@@ -841,7 +868,12 @@ export function createAutoFarmController(options: {
       return;
     }
     if (!portal) finishingFight(false);
-    if (bossWanted()) { phase = 'boss'; travellingTo = null; return; }
+    if (bossWanted()) {
+      phase = 'boss';
+      bossDeathOnMap = options.mapId();
+      travellingTo = null;
+      return;
+    }
     if (phase !== 'farm') { target = null; route = []; lastGoal = null; routeClock = 0; holding = false; }
     phase = 'farm';
     travellingTo = null;
@@ -937,15 +969,17 @@ export function createAutoFarmController(options: {
     // sauf quand bossWanted() peut enfin nous laisser passer en
     // phase boss (vérifié juste après choosePhase()).
     if (waitingForBossRespawn) {
-      const boss = options.mapBoss?.();
-      if (!options.repeatBoss?.() || !advance || !boss) {
+      const state = currentBossState();
+      const onBossMap = state !== null && state !== undefined
+        || bossDeathOnMap === options.mapId();
+      if (!options.repeatBoss?.() || !advance || !onBossMap) {
         waitingForBossRespawn = false;
       } else if (bossWanted()) {
         // Boss prêt : on laisse choosePhaseNow() basculer en phase boss
         waitingForBossRespawn = false;
       } else {
         // Boss vivant-mais-pas-prêt, ou mort, ou respawn en cours
-        status = boss.dead ? 'Waiting for boss respawn' : 'Waiting for boss ready';
+        status = state?.dead === false ? 'Waiting for boss ready' : 'Waiting for boss respawn';
         return idle();
       }
     }
