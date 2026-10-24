@@ -1009,7 +1009,7 @@ export function createAutoFarmController(options: {
     }
     if (player.maxHp > 0 && player.hp >= player.maxHp * .9) lastHealthyAt = now();
     if (phase === 'farm') takePullTurns(dt);
-    const boss = phase === 'boss' ? options.mapBoss?.() ?? null : null;
+    const boss = (phase === 'boss' || options.repeatBoss?.()) ? options.mapBoss?.() ?? null : null;
     const portal = phase === 'portal' ? exitPortal() : null;
     const zone = bossZone();
     if (phase !== 'farm') target = null;
@@ -1060,6 +1060,11 @@ export function createAutoFarmController(options: {
     // A boss is aimed at its hitbox, not its sprite's foot.
     const bossPoint = boss ? { x: boss.x, y: boss.y + (boss.hitboxOffsetY ?? 0) } : null;
     let destination: Position | null = threat ?? target ?? portal ?? bossPoint;
+    // Mode repeatBoss : marche vers le boss vivant en phase 'farm' (aggro actif).
+    if (options.repeatBoss?.() && boss && !boss.dead && !threat) {
+      target = null;
+      destination = bossPoint;
+    }
     if (!destination) {
       for (const site of spawnSites) if (choiceKey(site) === selected && (!destination || (inZone(zone, site) === inZone(zone, destination) ? distance(site) < distance(destination) : !inZone(zone, site)))) destination = site;
     }
