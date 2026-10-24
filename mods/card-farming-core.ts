@@ -199,18 +199,39 @@ export function ensurePanelOpen(): boolean {
 }
 
 export function setAggroGroups(groups: Set<string>): void {
-  const panel = sheet();
-  if (!panel) return;
-  const rows = [...panel.querySelectorAll<HTMLElement>("[data-group]")];
-  const fallback = groups.size === 0
-    ? rows.find(row => row.querySelector<HTMLButtonElement>('[data-mode="farm"]'))
-    : undefined;
-  for (const row of rows) {
-    const group = row.dataset.group ?? "";
-    const desired = groups.has(group) ? "aggro" : row === fallback ? "farm" : "off";
-    const button = row.querySelector<HTMLButtonElement>(`[data-mode="${desired}"]`);
-    if (button && button.getAttribute("aria-checked") !== "true") button.click();
+  const s = sheet();
+  if (!s) return;
+
+  for (const row of s.querySelectorAll<HTMLElement>("[data-group]")) {
+    const offBtn = row.querySelector<HTMLButtonElement>('[data-mode="off"]');
+    if (offBtn && offBtn.getAttribute("aria-checked") !== "true") offBtn.click();
   }
+
+  let maxAggro = 99;
+  const aggText = s.textContent?.match(/Aggro \d+\/(\d+)/);
+  if (aggText) maxAggro = parseInt(aggText[1], 10);
+
+  let count = 0;
+  for (const row of s.querySelectorAll<HTMLElement>("[data-group]")) {
+    if (count >= maxAggro) break;
+    const group = row.dataset.group;
+    if (group && groups.has(group)) {
+      const aggroBtn = row.querySelector<HTMLButtonElement>('[data-mode="aggro"]');
+      if (aggroBtn && !aggroBtn.disabled && aggroBtn.getAttribute("aria-checked") !== "true") {
+        aggroBtn.click();
+        count++;
+      }
+    }
+  }
+}
+
+function setTarget(mode: "closest" | "strongest" | "lowest"): void {
+  const s = sheet();
+  if (!s) return;
+  const label = mode === "strongest" ? "Strongest" : mode === "lowest" ? "Lowest HP" : "Closest";
+  const btns = Array.from(s.querySelectorAll("button"));
+  const targetBtn = btns.find(button => button.textContent?.trim() === label);
+  if (targetBtn) targetBtn.click();
 }
 
 function moveOnSwitch(): HTMLElement | null {
@@ -270,7 +291,7 @@ export type RunnerOptions = {
   selectMaps: (coop: CoopLike) => Map<string, CardDef[]>;
 };
 
-export type RunnerPhase = "idle" | "traveling" | "boss" | "mobs" | "done";
+export type RunnerPhase = "idle" | "traveling" | "mobs" | "done";
 
 export type Runner = {
   start: () => void;
@@ -290,7 +311,6 @@ export function createRunner(options: RunnerOptions): Runner {
   let phase: RunnerPhase = "idle";
   let currentMap = "";
   let currentCards: CardDef[] = [];
-  let movingToMobs = false;
   let intervalId: number | null = null;
   let tickInProgress = false;
   let lastErrorTs = 0;
@@ -317,12 +337,16 @@ export function createRunner(options: RunnerOptions): Runner {
     stopFarm();
   }
 
-  async function startMobsPhase(cards: CardDef[]): Promise<void> {
+  async function startMobsPhase(coop: CoopLike, cards: CardDef[]): Promise<void> {
     phase = "mobs";
+    // Move On must stay off so Auto Farm remains in its farm phase.
     setMoveOn(false);
     setFlag(options.getBossFlagKey(), false);
+    const bossMissing = cards.some(card => card.rarity === "boss");
+    setTarget(bossMissing ? "strongest" : "closest");
     const groups = new Set<string>();
     for (const card of cards) {
+      if (card.rarity === "boss") continue;
       const stat = statOf(card.enemy);
       if (stat) groups.add(`stat:${stat}`);
     }
@@ -332,9 +356,9 @@ export function createRunner(options: RunnerOptions): Runner {
       lastErrorMessage = "démarrage du farm mobs refusé";
       return;
     }
-    movingToMobs = true;
     lastErrorTs = 0;
     lastErrorMessage = "";
+    void coop;
   }
 
   async function tickMap(coop: CoopLike, mapId: string, cards: CardDef[], tickGeneration: number): Promise<void> {
@@ -356,26 +380,7 @@ export function createRunner(options: RunnerOptions): Runner {
     currentMap = mapId;
     currentCards = cards;
     for (const card of cards) lastOwned[card.id] = ownedOf(coop, card.id);
-    movingToMobs = false;
-
-    const bossMissing = cards.some(card => card.rarity === "boss");
-    if (bossMissing) {
-      phase = "boss";
-      setMoveOn(true);
-      setFlag(options.getBossFlagKey(), true);
-      setAggroGroups(new Set());
-      if (!startFarm()) {
-        lastErrorTs = Date.now();
-        lastErrorMessage = "démarrage du farm boss refusé";
-        currentCards = [];
-        currentMap = "";
-        return;
-      }
-      lastErrorTs = 0;
-      lastErrorMessage = "";
-      return;
-    }
-    await startMobsPhase(cards);
+    await startMobsPhase(coop, cards);
   }
 
   async function tick(): Promise<void> {
@@ -400,18 +405,9 @@ export function createRunner(options: RunnerOptions): Runner {
           cleanupFarm();
           currentCards = [];
           currentMap = "";
-          movingToMobs = false;
         } else {
           currentCards = stillMissing;
-          const bossStillMissing = stillMissing.some(card => card.rarity === "boss");
-          if (phase === "boss" && !bossStillMissing && !movingToMobs) {
-            await startMobsPhase(stillMissing.filter(card => card.rarity !== "boss"));
-            if (lastErrorTs > 0) {
-              currentCards = [];
-              currentMap = "";
-              movingToMobs = false;
-            }
-          } else if (phase === "mobs") {
+          if (phase === "mobs") {
             const groups = new Set<string>();
             for (const card of stillMissing) {
               if (card.rarity === "boss") continue;
@@ -465,7 +461,6 @@ export function createRunner(options: RunnerOptions): Runner {
       phase = "idle";
       currentMap = "";
       currentCards = [];
-      movingToMobs = false;
       lastErrorTs = 0;
       lastErrorMessage = "";
       if (activeRunner?.id === runnerId) activeRunner = null;

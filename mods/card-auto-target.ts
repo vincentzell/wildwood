@@ -42,11 +42,7 @@ function groupByMap(coop: NonNullable<ReturnType<typeof getCoop>>): Map<string, 
     grouped.set(mapId, cards);
   }
   const entries = [...grouped.entries()];
-  entries.sort(([mapA, cardsA], [mapB, cardsB]) => {
-    const bossA = cardsA.some(card => card.rarity === "boss") ? 0 : 1;
-    const bossB = cardsB.some(card => card.rarity === "boss") ? 0 : 1;
-    return bossA - bossB || mapA.localeCompare(mapB);
-  });
+  entries.sort((a, b) => a[0].localeCompare(b[0]));
   return new Map(entries);
 }
 
@@ -80,8 +76,7 @@ function renderStatus(): HTMLElement {
   const phaseLabels: Record<string, string> = {
     idle: "Off",
     traveling: "Voyage…",
-    boss: "Boss",
-    mobs: "Farm mobs",
+    mobs: "Farm",
     done: "✓ Complet",
   };
   phase.textContent = enabled ? (phaseLabels[runner.getPhase()] ?? "—") : "Désactivé";
