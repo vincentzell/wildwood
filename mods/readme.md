@@ -72,6 +72,9 @@ mods/
 ├── card-auto-farm.ts # CARD — Auto Farm All Cards
 ├── card-auto-target.ts # CARD — Auto Farm Target Cards
 ├── misc-auto-ad.ts # MISC — Auto Ad
+├── misc-auto-claim-offline.ts # MISC — Auto Claim Offline
+├── misc-auto-guild-quests.ts # MISC — Auto Guild Quests
+├── misc-open-dev.ts # MISC — Open Dev Panel
 ├── misc-daily-gems.ts # MISC — Auto Daily Gems
 │
 └── farm/ # copies moddées du runtime auto-farm
@@ -85,12 +88,15 @@ mods/
 |---|---|---|
 | FARM | Auto Kiting | Kite les ennemis mêlée + dodge les projectiles ennemis. Ignore les AOE boss (décision v1). |
 | FARM | Auto Prestige | Déclenche le prestige via API quand le boss/endless requis est complété (poll `bossRewardClaims` + `proceduralCompleted`). |
-| FARM | Auto Farm Boss | Voyage vers une map de campagne choisie et farme son boss en boucle (mode `repeatBoss` du contrôleur copié). |
+| FARM | Auto Farm Boss | Voyage vers une map choisie, farme son boss en boucle via `repeatBoss`. |
 | QUEST | Auto Quest | Navigue via `travelToMap` vers la map de la première quête hebdo active, active le groupe d'aggro natif, farm jusqu'au drop, passe à la suivante. |
 | CARD | Auto Farm All Cards | Boucle par map : boss d'abord, puis multi-aggro sur les stats des mobs manquants. Champ copies configurable. Pity tracker local. |
 | CARD | Auto Farm Target Cards | Idem All Cards mais sur une liste de cartes choisie via dropdown. Bouton Clear + champ copies. |
 | MISC | Auto Ad | Réclame la récompense pub via `coop.claimAdGems()` (voie API, pas de pub affichée). |
 | MISC | Auto Daily Gems | Réclame le bonus daily via `coop.claimDailyGemBonus()` dès que `dailyGemBonusClaimable()` retourne true. |
+| MISC | Auto Guild Quests | Collecte les quêtes de guilde via `guild.guildAction({kind:'collectQuests'})` quand 15 perso sont finies. |
+| MISC | Auto Claim Offline | Claim auto de l'offline progress via `coop.acknowledgeOfflineProgress()` au retour. |
+| MISC | Open Dev Panel | Force l'affichage de `#devAudit` (onglets serveur nécessitent dev identity, onglets locaux OK). |
 
 Exclusion mutuelle : activer Auto Farm All Cards désactive Auto
 Farm Target Cards (et inversement), car les deux utilisent le même
@@ -169,10 +175,10 @@ appelé une fois pour toutes (voir section suivante).
 ## Patch à re-appliquer après un sync upstream
 
 `git pull origin main` (ou `git merge upstream/main`) peut restaurer
-`src/main.ts` à sa version d'origine — Git voit les 3 lignes ajoutées
+`src/main.ts` à sa version d'origine — Git voit les 4 lignes ajoutées
 comme un conflit local à résoudre, et un `checkout` manuel les perd.
 
-**Après chaque sync, vérifier que les 3 modifications suivantes sont
+**Après chaque sync, vérifier que les 4 modifications suivantes sont
 présentes dans `src/main.ts`.**
 
 ### 1. Import de `installAllMods`
@@ -190,14 +196,6 @@ Après le dernier `install*()` (typiquement
 
 ```ts
 installAllMods();
-```
-
-### 2bis. Exposer `bossController` à Auto Farm
-
-Dans `createAutoFarm({...})`, ajouter au bloc `later` :
-
-```ts
-bossController: () => bossController,
 ```
 
 ### 3. Redirection de `createAutoFarm` (mod Auto Kiting uniquement)
@@ -218,7 +216,18 @@ import { createAutoFarm } from "../mods/farm/auto-farm-wiring";
 son switch n'a aucun effet (le contrôleur d'origine est utilisé, qui
 ne lit pas `isAutoDodgeEnabled()`).
 
-### 4. Patch du contrôleur copié
+### 4. Exposer `bossController` à Auto Farm
+
+Dans `createAutoFarm({...})` de `src/main.ts`, ajouter au bloc `later` :
+
+```ts
+bossController: () => bossController,
+```
+
+C'est utilisé par `mods/farm/auto-farm-wiring.ts` pour passer
+`bossDanger` au contrôleur copié (dodge des AOE de boss campagne).
+
+### 5. Patch du contrôleur copié
 
 `mods/farm/auto-farm-controller.ts` n'est pas une copie pure de
 `src/`. Il contient 3 patches, à ré-appliquer si on resynchronise
@@ -254,10 +263,11 @@ délimitées par des commentaires `// Mode repeatBoss` dans le code.
 grep -n "installAllMods\|createAutoFarm" src/main.ts
 ```
 
-Les trois occurrences doivent apparaître :
+Les quatre modifications doivent apparaître :
 - `import { installAllMods } from "../mods";`
 - `installAllMods();`
 - `import { createAutoFarm } from "../mods/farm/auto-farm-wiring";`
+- `bossController: () => bossController,`
 
 Puis :
 
