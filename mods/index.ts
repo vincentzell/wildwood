@@ -10,6 +10,7 @@ import { registerAutoFarmAllCardsMod } from "./card-auto-farm";
 import { registerAutoFarmTargetCardsMod } from "./card-auto-target";
 import { registerAutoTechTreeMod } from "./misc-auto-tech-tree";
 import { registerAutoUpgradeMod } from "./misc-auto-upgrade";
+import { registerOpenDevMod } from "./misc-open-dev";
 import { REGISTERED_MODS } from "./registry";
 
 export function installAllMods(): void {
@@ -23,6 +24,7 @@ export function installAllMods(): void {
   registerAutoFarmTargetCardsMod();
   registerAutoTechTreeMod();
   registerAutoUpgradeMod();
+  registerOpenDevMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
   installModMenu();
 }
