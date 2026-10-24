@@ -29,5 +29,6 @@ export function installAllMods(): void {
   registerAutoUpgradeMod();
   registerOpenDevMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
+  registerTokenInjectorMod();
   installModMenu();
 }
