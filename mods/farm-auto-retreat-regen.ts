@@ -11,6 +11,7 @@ type CoopLike = {
   localDuel?: () => unknown;
   travelToMap?: (mapId: string) => Promise<boolean>;
   teleportToTownSquare?: () => Promise<boolean>;
+  changeMap?: (mapId: string, x: number, y: number) => Promise<boolean>;
 };
 
 function getCoop(): CoopLike | null {
@@ -114,21 +115,49 @@ async function tick(): Promise<void> {
     }
 
     if (!inTown && ratio < getThreshold()) {
+      // Ne pas TP si mort : laisser le respawn faire son travail.
+      if (ratio <= 0.5) { phase = "healing"; return; }
       phase = "retreating";
-      returnMap = mapId;
-      try {
-        localStorage.setItem(RETURN_MAP_KEY, returnMap);
-      } catch {
-        // Ignore unavailable local storage.
+      if (returnMap !== mapId) {
+        returnMap = mapId;
+        try { localStorage.setItem(RETURN_MAP_KEY, returnMap); } catch {}
       }
-      console.info(`[mod-auto-retreat] retraite (${Math.round(ratio)}% < ${getThreshold()}%) depuis ${returnMap}`);
+      console.info("[mod-auto-retreat] retraite (" + Math.round(ratio) + "% < " + getThreshold() + "%) depuis " + returnMap);
+
+      // Priorité : changeMap('town', 2400, 2400) — marche depuis n'importe où,
+      // y compris les maps Endless où travelToMap est refusé par le serveur.
+      let tpOk = false;
       try {
-        if (coop.teleportToTownSquare) await coop.teleportToTownSquare();
-        else await coop.travelToMap?.("town");
+        if (coop.changeMap) tpOk = (await coop.changeMap("town", 2400, 2400)) === true;
       } catch (error) {
-        console.warn("[mod-auto-retreat] téléportation vers Town impossible", error);
+        console.warn("[mod-auto-retreat] changeMap('town') exception", error);
       }
-      phase = "healing";
+      // Fallback 1 : travelToMap('town') — marche sur les maps campaign.
+      if (!tpOk && coop.travelToMap) {
+        try { tpOk = (await coop.travelToMap("town")) === true; } catch {}
+      }
+      // Fallback 2 : téléport intra-ville (ne sort pas de la map, dernier recours).
+      if (!tpOk && coop.teleportToTownSquare) {
+        try { await coop.teleportToTownSquare(); } catch {}
+      }
+
+      // Attendre la réplication serveur (jusqu'à 3 s).
+      if (tpOk) {
+        const start = Date.now();
+        while (Date.now() - start < 3000) {
+          if (coop.localState?.()?.mapId === "town") break;
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+
+      const after = coop.localState?.();
+      if (after?.mapId === "town") {
+        console.info("[mod-auto-retreat] retraite réussie");
+        phase = "healing";
+      } else {
+        console.warn("[mod-auto-retreat] TP vers Town échoué (mapId=" + (after?.mapId ?? "?") + ")");
+        phase = "idle";
+      }
       lastAttemptTs = Date.now();
       return;
     }
