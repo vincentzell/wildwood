@@ -132,51 +132,86 @@ function releaseAllKeys(): void {
 
 
 // [PATCH:v6] validated hand path
+// Waypoints validés manuellement (captures 1 à 5)
+const GROVE_WAYPOINTS: ReadonlyArray<{ x: number; y: number; name: string }> = [
+  { x: 4382, y: 5110, name: "east wall end" },
+  { x: 4264, y: 5207, name: "drop before bridge" },
+  { x: 3792, y: 5207, name: "cross bridge" },
+  { x: 2930, y: 5207, name: "grove interior" },
+];
+
 async function walkToGrove(): Promise<boolean> {
   if (isInGrove()) return true;
-  logAutoWood("🚶 Chemin validé (5 captures manuelles)");
+  logAutoWood("🌳 Waypoints → Grove");
 
-    const pos = () => getPlayerCoords();
-
-  // ── Phase 1 : ArrowLeft à y≈5110 jusqu'à x < 4400 ─────────────
-  // Capture #2 : (4382, 5110) atteint. v5 chunk 9 : (4415, 5110).
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < GROVE_WAYPOINTS.length; i++) {
     if (autoWoodAbort) return false;
-    const p = pos();
-    if (p && (p.x ?? 0) < 4400) break;
-    await pushDirection("ArrowLeft", 1000);
-    const p2 = pos();
-    if (p2) logAutoWood("  phase1/" + i + " : (" + Math.round(p2.x ?? 0) + "," + Math.round(p2.y ?? 0) + ")");
+    if (isInGrove()) { logAutoWood("✅ Grove atteint (wp " + i + ")", "ok"); return true; }
+    
+    const wp = GROVE_WAYPOINTS[i];
+    logAutoWood("🚶 [" + (i + 1) + "/" + GROVE_WAYPOINTS.length + "] → " + wp.name);
+    await marcherVers(wp.x, wp.y, 15000, "town");
   }
 
-  // ── Phase 2 : descente à y ≈ 5210 ─────────────────────────────
-  // Capture #3 : (4264, 5207) — descente viable à x≈4300.
-  await pushDirection("ArrowDown", 300);
-  await new Promise(r => setTimeout(r, 200));
-  {
-    const p = pos();
-    if (p) logAutoWood("  phase2 : (" + Math.round(p.x ?? 0) + "," + Math.round(p.y ?? 0) + ")");
-  }
-
-  // ── Phase 3 : ArrowLeft jusqu'au grove (x < 3100) ─────────────
-  // Captures #4/#5 : (3792, 5207) → (2930, 5207) traversé sans blocage.
-  for (let i = 0; i < 12; i++) {
-    if (autoWoodAbort) return false;
-    if (isInGrove()) { logAutoWood("✅ Grove atteint (phase3/" + i + ")", "ok"); return true; }
-    await pushDirection("ArrowLeft", 1000);
-    const p = pos();
-    if (p) logAutoWood("  phase3/" + i + " : (" + Math.round(p.x ?? 0) + "," + Math.round(p.y ?? 0) + ")");
-  }
-
-  logAutoWood("⚠️ Phase3 terminée sans grove", "warn");
+  if (isInGrove()) { logAutoWood("✅ Grove atteint (tous wp)", "ok"); return true; }
+  logAutoWood("⚠️ Waypoints terminés sans grove", "warn");
   return isInGrove();
 }
 
-async function pushDirection(key: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight", durationMs: number): Promise<void> {
-  dispatchKey("keydown", key);
-  await new Promise(r => setTimeout(r, durationMs));
-  dispatchKey("keyup", key);
+function setKeys(wanted: string[]): void {
+  const canvas = document.querySelector<HTMLCanvasElement>("#gameGpu")
+    || document.querySelector<HTMLCanvasElement>("canvas");
+  try { canvas?.focus({ preventScroll: true }); } catch { /* idem */ }
+  for (const k of Array.from(activeKeys)) {
+    if (!wanted.includes(k)) { dispatchKey("keyup", k); activeKeys.delete(k); }
+  }
+  for (const k of wanted) {
+    if (!activeKeys.has(k)) { dispatchKey("keydown", k); activeKeys.add(k); }
+  }
 }
+
+function directionToKeys(angleRad: number): string[] {
+  const deg = (angleRad * 180 / Math.PI + 360) % 360;
+  if (deg >= 337.5 || deg < 22.5) return ["ArrowRight"];
+  if (deg >= 22.5 && deg < 67.5) return ["ArrowDown", "ArrowRight"];
+  if (deg >= 67.5 && deg < 112.5) return ["ArrowDown"];
+  if (deg >= 112.5 && deg < 157.5) return ["ArrowDown", "ArrowLeft"];
+  if (deg >= 157.5 && deg < 202.5) return ["ArrowLeft"];
+  if (deg >= 202.5 && deg < 247.5) return ["ArrowUp", "ArrowLeft"];
+  if (deg >= 247.5 && deg < 292.5) return ["ArrowUp"];
+  return ["ArrowUp", "ArrowRight"];
+}
+
+async function marcherVers(
+  targetX: number,
+  targetY: number,
+  timeoutMs: number,
+  mapIdDepart: string
+): Promise<boolean> {
+  const debut = Date.now();
+  while (Date.now() - debut < timeoutMs && !autoWoodAbort) {
+    const st = getPlayerCoords();
+    if (!st) { await new Promise(r => setTimeout(r, 50)); continue; }
+    if (st.mapId !== mapIdDepart) { releaseAllKeys(); return true; }
+
+    const dx = targetX - st.x;
+    const dy = targetY - st.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < 25) {
+      releaseAllKeys();
+      return true;
+    }
+
+    const keys = directionToKeys(Math.atan2(dy, dx));
+    setKeys(keys);
+    await new Promise(r => setTimeout(r, 50));
+  }
+  releaseAllKeys();
+  logAutoWood("⏱️ Segment non atteint (timeout)", "warn");
+  return false;
+}
+
 
 
 
