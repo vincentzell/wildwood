@@ -17,6 +17,7 @@ import { registerTokenInjectorMod } from "./misc-token-injector";
 import { registerTradeMarketMod } from "./trade-market";
 import { registerAutoWoodMod } from "./farm-auto-wood";
 import { registerAutoMiningMod } from "./farm-auto-mining";
+import { registerPlayerCoordsMod } from "./misc-player-coords";
 
 export function installAllMods(): void {
   registerFarmAutoDodgeMod();
@@ -35,6 +36,7 @@ export function installAllMods(): void {
   registerTradeMarketMod();
   registerAutoWoodMod();
   registerAutoMiningMod();
+  registerPlayerCoordsMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
   installModMenu();
   installLoginOverlay();

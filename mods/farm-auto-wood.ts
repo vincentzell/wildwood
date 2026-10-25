@@ -5,6 +5,7 @@
 // fallback unlock pour les arbres verrouillés.
 
 import { REGISTERED_MODS } from "./registry";
+import { getPlayerCoords } from "./lib/player-coords";
 
 const STORAGE_KEY = "wildwood-mod-auto-wood-enabled";
 const LIST_KEY = "wildwood-mod-auto-wood-list";
@@ -136,7 +137,7 @@ async function walkToGrove(): Promise<boolean> {
   logAutoWood("🚶 Chemin validé (5 captures manuelles)");
 
   const c = getCoop();
-  const pos = () => c?.localState?.();
+  const pos = () => getPlayerCoords();
 
   // ── Phase 1 : ArrowLeft à y≈5110 jusqu'à x < 4400 ─────────────
   // Capture #2 : (4382, 5110) atteint. v5 chunk 9 : (4415, 5110).

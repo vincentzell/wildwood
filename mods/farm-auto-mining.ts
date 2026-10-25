@@ -3,6 +3,7 @@
 // Navigation par waypoints (userscript WildPote v20.7.0), fallback unlock.
 
 import { REGISTERED_MODS } from "./registry";
+import { getPlayerCoords } from "./lib/player-coords";
 
 const STORAGE_KEY = "wildwood-mod-auto-mining-enabled";
 const LIST_KEY = "wildwood-mod-auto-mining-list";
@@ -171,7 +172,7 @@ async function marcherVers(
   let stuckCount = 0;
 
   while (Date.now() - debut < timeoutMs && !autoMiningAbort) {
-    const st = c.localState?.();
+    const st = getPlayerCoords();
     if (!st) { await new Promise(r => setTimeout(r, 100)); continue; }
 
     if (st.mapId && st.mapId !== mapIdDepart) {
@@ -216,7 +217,7 @@ async function marcherVers(
 async function ensureTown(): Promise<boolean> {
   const c = getCoop();
   if (!c) return false;
-  if (c.localState?.()?.mapId === "town") return true;
+  if (getPlayerCoords()?.mapId === "town") return true;
   if (!c.changeMap) { logAutoMining("❌ changeMap indisponible", "bad"); return false; }
   logAutoMining("🏘️ Téléport vers Town");
   try {
@@ -224,10 +225,10 @@ async function ensureTown(): Promise<boolean> {
     if (!ok) { logAutoMining("❌ changeMap a retourné false", "bad"); return false; }
     const start = Date.now();
     while (Date.now() - start < 4000) {
-      if (c.localState?.()?.mapId === "town") return true;
+      if (getPlayerCoords()?.mapId === "town") return true;
       await new Promise(r => setTimeout(r, 150));
     }
-    return c.localState?.()?.mapId === "town";
+    return getPlayerCoords()?.mapId === "town";
   } catch (e) {
     logAutoMining("❌ changeMap exception: " + (e as Error).message, "bad");
     return false;
