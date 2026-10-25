@@ -1,8 +1,6 @@
-
 // mods/farm-auto-wood.ts
 // Auto Wood — active le chop-body natif du jeu à Timberwood (Town grove).
-// Navigation par waypoints (pont ouest → Oak stand), fallback blind walk,
-// fallback unlock pour les arbres verrouillés.
+// Navigation par waypoints (pont ouest → Oak stand), fallback unlock pour les arbres verrouillés.
 
 import { REGISTERED_MODS } from "./registry";
 import { getPlayerCoords } from "./lib/player-coords";
@@ -114,24 +112,79 @@ function dispatchKey(type: "keydown" | "keyup", key: string): void {
   if (canvas) try { canvas.dispatchEvent(evt); } catch { /* idem */ }
 }
 
+function setKeys(wanted: string[]): void {
+  const canvas = document.querySelector<HTMLCanvasElement>("#gameGpu")
+    || document.querySelector<HTMLCanvasElement>("canvas");
+  try { canvas?.focus({ preventScroll: true }); } catch { /* idem */ }
+  for (const k of Array.from(activeKeys)) {
+    if (!wanted.includes(k)) { dispatchKey("keyup", k); activeKeys.delete(k); }
+  }
+  for (const k of wanted) {
+    if (!activeKeys.has(k)) { dispatchKey("keydown", k); activeKeys.add(k); }
+  }
+}
 
 function releaseAllKeys(): void {
   for (const k of Array.from(activeKeys)) { dispatchKey("keyup", k); activeKeys.delete(k); }
 }
 
-
-
+function directionToKeys(angleRad: number): string[] {
+  const deg = (angleRad * 180 / Math.PI + 360) % 360;
+  if (deg >= 337.5 || deg < 22.5) return ["ArrowRight"];
+  if (deg >= 22.5 && deg < 67.5) return ["ArrowDown", "ArrowRight"];
+  if (deg >= 67.5 && deg < 112.5) return ["ArrowDown"];
+  if (deg >= 112.5 && deg < 157.5) return ["ArrowDown", "ArrowLeft"];
+  if (deg >= 157.5 && deg < 202.5) return ["ArrowLeft"];
+  if (deg >= 202.5 && deg < 247.5) return ["ArrowUp", "ArrowLeft"];
+  if (deg >= 247.5 && deg < 292.5) return ["ArrowUp"];
+  return ["ArrowUp", "ArrowRight"];
+}
 
 // ─── Navigation ───
+async function marcherVers(
+  targetX: number,
+  targetY: number,
+  timeoutMs: number,
+  mapIdDepart: string
+): Promise<boolean> {
+  const debut = Date.now();
+  let lastLog = 0;
+  logAutoWood("🚶 → (" + Math.round(targetX) + ", " + Math.round(targetY) + ")");
+  releaseAllKeys();
 
+  while (Date.now() - debut < timeoutMs && !autoWoodAbort) {
+    const st = getPlayerCoords();
+    if (!st) { await new Promise(r => setTimeout(r, 50)); continue; }
 
+    if (st.mapId !== mapIdDepart) {
+      releaseAllKeys();
+      logAutoWood("✅ Map changée → " + st.mapId);
+      return true;
+    }
 
+    const dx = targetX - st.x;
+    const dy = targetY - st.y;
+    const dist = Math.hypot(dx, dy);
 
+    if (Date.now() - lastLog > 1000) {
+      logAutoWood(`   [nav] pos=(${Math.round(st.x)}, ${Math.round(st.y)}) dist=${Math.round(dist)}px`, "info");
+      lastLog = Date.now();
+    }
 
+    if (dist < 25) {
+      releaseAllKeys();
+      return true;
+    }
 
+    const keys = directionToKeys(Math.atan2(dy, dx));
+    setKeys(keys);
+    await new Promise(r => setTimeout(r, 50));
+  }
+  releaseAllKeys();
+  logAutoWood("⏱️ Segment non atteint (timeout)", "warn");
+  return false;
+}
 
-
-// [PATCH:v6] validated hand path
 // Waypoints validés manuellement (captures 1 à 5)
 const GROVE_WAYPOINTS: ReadonlyArray<{ x: number; y: number; name: string }> = [
   { x: 4382, y: 5110, name: "east wall end" },
@@ -158,63 +211,6 @@ async function walkToGrove(): Promise<boolean> {
   return isInGrove();
 }
 
-function setKeys(wanted: string[]): void {
-  const canvas = document.querySelector<HTMLCanvasElement>("#gameGpu")
-    || document.querySelector<HTMLCanvasElement>("canvas");
-  try { canvas?.focus({ preventScroll: true }); } catch { /* idem */ }
-  for (const k of Array.from(activeKeys)) {
-    if (!wanted.includes(k)) { dispatchKey("keyup", k); activeKeys.delete(k); }
-  }
-  for (const k of wanted) {
-    if (!activeKeys.has(k)) { dispatchKey("keydown", k); activeKeys.add(k); }
-  }
-}
-
-function directionToKeys(angleRad: number): string[] {
-  const deg = (angleRad * 180 / Math.PI + 360) % 360;
-  if (deg >= 337.5 || deg < 22.5) return ["ArrowRight"];
-  if (deg >= 22.5 && deg < 67.5) return ["ArrowDown", "ArrowRight"];
-  if (deg >= 67.5 && deg < 112.5) return ["ArrowDown"];
-  if (deg >= 112.5 && deg < 157.5) return ["ArrowDown", "ArrowLeft"];
-  if (deg >= 157.5 && deg < 202.5) return ["ArrowLeft"];
-  if (deg >= 202.5 && deg < 247.5) return ["ArrowUp", "ArrowLeft"];
-  if (deg >= 247.5 && deg < 292.5) return ["ArrowUp"];
-  return ["ArrowUp", "ArrowRight"];
-}
-
-async function marcherVers(
-  targetX: number,
-  targetY: number,
-  timeoutMs: number,
-  mapIdDepart: string
-): Promise<boolean> {
-  const debut = Date.now();
-  while (Date.now() - debut < timeoutMs && !autoWoodAbort) {
-    const st = getPlayerCoords();
-    if (!st) { await new Promise(r => setTimeout(r, 50)); continue; }
-    if (st.mapId !== mapIdDepart) { releaseAllKeys(); return true; }
-
-    const dx = targetX - st.x;
-    const dy = targetY - st.y;
-    const dist = Math.hypot(dx, dy);
-
-    if (dist < 25) {
-      releaseAllKeys();
-      return true;
-    }
-
-    const keys = directionToKeys(Math.atan2(dy, dx));
-    setKeys(keys);
-    await new Promise(r => setTimeout(r, 50));
-  }
-  releaseAllKeys();
-  logAutoWood("⏱️ Segment non atteint (timeout)", "warn");
-  return false;
-}
-
-
-
-
 async function ensureTown(): Promise<boolean> {
   const c = getCoop();
   if (!c) return false;
@@ -222,7 +218,6 @@ async function ensureTown(): Promise<boolean> {
   if (!c.changeMap) { logAutoWood("❌ changeMap indisponible", "bad"); return false; }
   logAutoWood("🏘️ Téléport vers Town");
   try {
-       // Même coordonnée que le mod retreat — zone de spawn validée par le serveur.
     const ok = await c.changeMap("town", 2400, 2400);
     if (!ok) { logAutoWood("❌ changeMap a retourné false", "bad"); return false; }
     const start = Date.now();

@@ -165,7 +165,9 @@ async function marcherVers(
   mapIdDepart: string
 ): Promise<boolean> {
   const debut = Date.now();
+  let lastLog = 0;
   logAutoMining("🚶 → (" + Math.round(targetX) + ", " + Math.round(targetY) + ")");
+  releaseAllKeys();
 
   while (Date.now() - debut < timeoutMs && !autoMiningAbort) {
     const st = getPlayerCoords();
@@ -181,18 +183,18 @@ async function marcherVers(
     const dy = targetY - st.y;
     const dist = Math.hypot(dx, dy);
 
-    // Tolérance de 25px : si on est dans un rayon de 25px du waypoint, 
-    // le segment est validé (pas besoin d'être au pixel près).
+    if (Date.now() - lastLog > 1000) {
+      logAutoMining(`   [nav] pos=(${Math.round(st.x)}, ${Math.round(st.y)}) dist=${Math.round(dist)}px`, "info");
+      lastLog = Date.now();
+    }
+
     if (dist < 25) {
       releaseAllKeys();
       return true;
     }
 
-    // On pousse dans la direction de la cible, sans anti-stuck
     const keys = directionToKeys(Math.atan2(dy, dx));
     setKeys(keys);
-    
-    // 50ms de réactivité au lieu de 100ms
     await new Promise(r => setTimeout(r, 50));
   }
   releaseAllKeys();
