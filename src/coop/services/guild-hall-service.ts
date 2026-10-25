@@ -6,10 +6,11 @@ export type GuildHallState = { guildId: string; fund: number; spent: number; lev
 /**
  * This account's guild hall: its guild's hall row (fund and upgrade levels)
  * through the caller-scoped my_guild_hall view, empty without a guild; and the
- * hall's two reducers, an upgrade and the door.
+ * hall's two reducers, an upgrade and the door. For its President and Vice
+ * President, the join requests waiting (my_guild_join_requests).
  */
 export function createGuildHallRows(connection: () => DbConnection | null, notify: () => void) {
-  let hall: GuildHallState | null = null;
+  let hall: GuildHallState | null = null, joinRequests = 0;
 
   function watch(current: DbConnection, isCurrent: () => boolean) {
     hall = null;
@@ -21,6 +22,14 @@ export function createGuildHallRows(connection: () => DbConnection | null, notif
     };
     current.db.myGuildHall.onInsert(read); current.db.myGuildHall.onUpdate(read); current.db.myGuildHall.onDelete(read);
     current.subscriptionBuilder().onApplied(read).subscribe([tables.myGuildHall]);
+    joinRequests = 0;
+    const count = () => {
+      if (!isCurrent()) return;
+      const next = current.db.myGuildJoinRequests.count();
+      if (Number(next) !== joinRequests) { joinRequests = Number(next); notify(); }
+    };
+    current.db.myGuildJoinRequests.onInsert(count); current.db.myGuildJoinRequests.onDelete(count);
+    current.subscriptionBuilder().onApplied(count).subscribe([tables.myGuildJoinRequests]);
   }
 
   return {
@@ -28,6 +37,8 @@ export function createGuildHallRows(connection: () => DbConnection | null, notif
     api: {
       /** The player's guild's hall as the server has it; null without a guild. */
       guildHall: (): GuildHallState | null => hall,
+      /** Join requests waiting on the guild; always 0 for anyone but its President and Vice President. */
+      guildJoinRequests: () => joinRequests,
       /** The President or a Vice President buys a part's next level from the hall fund. */
       async upgradeGuildHall(part: GuildHallPart) {
         const current = connection();

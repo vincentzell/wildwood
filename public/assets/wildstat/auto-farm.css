@@ -575,172 +575,7 @@
   cursor: pointer;
 }
 .equipment-offer-review[hidden] { display: none; }
-/* Loot Filter, opened from the map window's Item Drops header, in the Auto
- * Farm window's frame. Phrased as what is picked up: lit green is on, dark
- * and struck through is filtered. */
-#mapGuide .map-guide-loot-filter {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  margin: 0;
-  padding: 4px 12px;
-  border: 2px solid rgba(105,229,111,.55);
-  border-radius: 8px;
-  background: rgba(105,229,111,.10);
-  box-shadow: none;
-  color: #c9f7c2;
-  font: 900 12px/1.2 var(--font-rounded);
-  white-space: nowrap;
-  cursor: pointer;
-}
-#mapGuide .map-guide-loot-filter[hidden], .map-guide-loot-filter-count[hidden] { display: none; }
-#mapGuide .map-guide-loot-filter:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.map-guide-loot-filter-count { color: #ffcf7a; }
-.map-guide-drop-card.is-filtered .map-guide-drop-art,
-.map-guide-drop-card.is-filtered .map-guide-drop-copy > :not(.map-guide-drop-filtered),
-.map-guide-drop-card.is-filtered .map-guide-drop-chance { opacity: .4; filter: grayscale(.8); }
-.map-guide-drop-filtered {
-  justify-self: start;
-  padding: 1px 6px;
-  border: 1px solid #c9ab64;
-  border-radius: 999px;
-  background: rgba(0,0,0,.45);
-  color: #ffcf7a;
-  font-size: 9px;
-  line-height: 1.3;
-  text-transform: uppercase;
-}
-.farm-sheet.loot-filter-sheet {
-  height: fit-content;
-  max-height: min(640px, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px));
-}
-.loot-filter-slots { display: grid; flex-shrink: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 14px; }
-.farm-sheet .loot-filter-chip {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 3px;
-  min-width: 0;
-  padding: 7px 2px 6px;
-  border: 2px solid var(--green);
-  border-radius: 10px;
-  background: rgba(105,229,111,.14);
-  box-shadow: 0 0 0 1px rgba(105,229,111,.3);
-  color: #fff;
-  font: inherit;
-  cursor: pointer;
-}
-.loot-filter-chip-art { position: relative; display: grid; place-items: center; width: 34px; height: 34px; }
-.loot-filter-chip-art > * { width: 30px; height: 30px; }
-.loot-filter-chip-label { max-width: 100%; overflow: hidden; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
-.farm-sheet .loot-filter-chip[aria-pressed="false"] { border-color: rgba(255,255,255,.14); background: #0006; box-shadow: none; color: var(--muted); }
-.loot-filter-chip[aria-pressed="false"] .loot-filter-chip-art > * { opacity: .35; filter: grayscale(1); }
-.loot-filter-chip[aria-pressed="false"] .loot-filter-chip-label { text-decoration: line-through; text-decoration-thickness: 2px; }
-/* A red slash across the art, the "no" sign, on a slot that is filtered. */
-.loot-filter-chip[aria-pressed="false"] .loot-filter-chip-art::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: -2px;
-  right: -2px;
-  height: 3px;
-  border-radius: 2px;
-  background: #ff9b91;
-  transform: rotate(-40deg);
-  pointer-events: none;
-}
-.loot-filter-hint { flex-shrink: 0; margin: 6px 14px 8px; color: var(--muted); text-align: center; font-size: 12px; }
-.loot-filter-items-head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; margin: 0 14px 6px; padding-top: 8px; border-top: 1px solid #ffffff1c; }
-.loot-filter-map { min-width: 0; margin: 0; overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
-.loot-filter-bulk { display: flex; flex-shrink: 0; gap: 4px; }
-.loot-filter-bulk[hidden] { display: none; }
-.farm-sheet .loot-filter-bulk button {
-  min-height: 28px;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  box-shadow: none;
-  color: #c9f7c2;
-  font: inherit;
-  font-size: 12px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-.farm-sheet .loot-filter-bulk button:disabled { color: var(--muted); opacity: .45; text-decoration: none; cursor: default; }
-.farm-sheet .loot-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 54px;
-  padding: 6px 10px;
-  border: 2px solid var(--green);
-  border-radius: 10px;
-  background: rgba(105,229,111,.08);
-  box-shadow: none;
-  color: #fff;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.farm-sheet .loot-filter-row[aria-checked="false"] { border-color: rgba(255,255,255,.14); background: #ffffff06; }
-.loot-filter-row[aria-checked="false"] .loot-filter-art,
-.loot-filter-row[aria-checked="false"] .loot-filter-copy { opacity: .4; filter: grayscale(.8); }
-.farm-sheet .loot-filter-row.is-slot-off { border-style: dashed; cursor: default; }
-.loot-filter-art { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 8px; background: #0006; }
-.loot-filter-art > * { width: 32px; height: 32px; }
-.loot-filter-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.loot-filter-copy strong { overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
-.loot-filter-detail { color: var(--muted); font-size: 12px; }
-.loot-filter-detail:empty { display: none; }
-.loot-filter-switch { display: flex; align-items: center; gap: 7px; flex-shrink: 0; color: #c9f7c2; font-size: 11px; text-transform: uppercase; }
-[aria-checked="false"] > .loot-filter-switch { color: var(--muted); }
-.is-slot-off > .loot-filter-switch { color: #ff9b91; }
-.loot-filter-check {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  border: 2px solid var(--green);
-  border-radius: 6px;
-  background: var(--green);
-  -webkit-text-stroke: 0;
-  text-shadow: none;
-}
-.loot-filter-check::after { content: "\2713"; color: #0f0f0f; font-size: 14px; line-height: 1; }
-[aria-checked="false"] .loot-filter-check { border-color: rgba(255,255,255,.3); background: #0006; }
-[aria-checked="false"] .loot-filter-check::after { content: ""; }
-.loot-filter-sheet .farm-selection { color: #ff9b91; }
-/* Auto keep best and Auto equip, above the slot chips, drawn like the item rows. */
-.loot-filter-settings { display: grid; flex-shrink: 0; gap: 6px; margin: 0 14px 8px; }
-.loot-filter-settings[hidden] { display: none; }
-.farm-sheet .loot-filter-setting { min-height: 46px; }
-.loot-filter-setting .loot-filter-detail { font-size: 11px; line-height: 1.25; }
 .equipment-offer-score { margin-top: 2px; color: #ff8872; font-weight: 700; }
-@media (max-height: 480px) {
-  /* Side by side on a landscape phone, so the item list keeps its room. */
-  .loot-filter-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 4px; }
-  .farm-sheet .loot-filter-setting { min-height: 40px; }
-  /* Landscape phones are short but wide: widen so each chip keeps its art and name on one line. */
-  .farm-sheet.loot-filter-sheet { width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 16px); }
-  .loot-filter-sheet .farm-header { padding-top: 8px; }
-  .farm-sheet .loot-filter-chip { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px; padding: 3px 6px; }
-  .loot-filter-chip-art { width: 26px; height: 26px; }
-  .loot-filter-chip-art > * { width: 24px; height: 24px; }
-  .loot-filter-hint { margin: 4px 14px; }
-  .loot-filter-items-head { margin-bottom: 4px; padding-top: 4px; }
-  .farm-sheet .loot-filter-row { min-height: 44px; padding: 4px 10px; }
-  .loot-filter-art { flex-basis: 32px; width: 32px; height: 32px; }
-  .loot-filter-art > * { width: 28px; height: 28px; }
-}
 
 /* Daily Quest board: today's three quests, then the guild's week and ranking. */
 .farm-sheet.quest-sheet { height: fit-content; max-height: min(640px, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px)); }
@@ -1019,6 +854,10 @@
 .school-window .is-locked .school-window-technique-status { color: rgba(255,255,255,.72); font-weight: 700; }
 .cards-tab { display: grid; grid-column: 1; grid-row: 1 / span 2; align-content: start; gap: 6px; container-type: inline-size; min-width: 0; padding: 0 7px 7px; }
 .cards-tab-count { display: block; margin: 0 auto 4px; }
+.cards-search { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 5px; background: #111; color: var(--text, #fff); font: inherit; }
+.cards-search:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.cards-search-status { margin: 0; color: #b3b3b3; font-size: 12px; }
+.cards-tab .inventory-item[hidden], .cards-zone[hidden], .cards-search-status[hidden] { display: none; }
 /* Active cards, at the top above the zones: a row per type, four slots each; empty is dashed, locked is dim. */
 .cards-active-row { display: grid; gap: 3px; }
 .cards-slot-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }

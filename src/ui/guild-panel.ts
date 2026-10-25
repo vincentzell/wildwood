@@ -448,9 +448,9 @@ export function createGuildPanel(options: Options) {
       const pool = element("div", undefined, "guild-quest-pool");
       const copy = element("div", undefined, "guild-row-copy");
       copy.append(element("strong", `Guild pool: ${collect.pool ?? 0} of ${collect.poolSize} quests left`),
-        element("span", !collect.ready ? `Finish your own ${WEEKLY_QUEST_COUNT} to take up to ${GUILD_QUEST_COLLECT_LIMIT} more from it.`
-          : !collect.left ? "You have taken all you can this week."
-          : collect.pool ? `You can take ${Math.min(collect.left, collect.pool)} more this week, three on your board at a time.`
+        element("span", !collect.ready ? `Finish your own ${WEEKLY_QUEST_COUNT} to take up to ${GUILD_QUEST_COLLECT_LIMIT} at a time from it.`
+          : !collect.left ? `Finish some of your ${GUILD_QUEST_COLLECT_LIMIT} to take more.`
+          : collect.pool ? `You can take ${Math.min(collect.left, collect.pool)} now, three on your board at a time.`
           : "The pool is used up this week."));
       pool.append(copy);
       const count = Math.min(collect.left, collect.pool ?? 0);

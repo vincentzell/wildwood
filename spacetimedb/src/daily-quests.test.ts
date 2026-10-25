@@ -147,7 +147,9 @@ it("lets a member whose own fifteen are done take more from the guild's pool, wi
   const list = JSON.parse(f.db.playerDailyQuest.identity.find(helper).questsJson);
   f.db.playerDailyQuest.identity.update({ ...f.db.playerDailyQuest.identity.find(helper), questsJson: JSON.stringify(list.map((quest: any, index: number) => index === 15 ? { ...quest, progress: quest.target } : quest)) });
   expect(memberQuestStanding(f.ctx, helper, 7n)).toMatchObject({ questsDone: 15, questsCollected: 1 });
-  expect(() => collectGuildQuests(f.ctx, helper)).toThrow("collected 15");
+  // Fifteen at a time, not fifteen a week: finishing one makes room for one more.
+  expect(collectGuildQuests(f.ctx, helper)).toBe(1);
+  expect(() => collectGuildQuests(f.ctx, helper)).toThrow("Finish some");
   // The old reducer still collects, from the pool.
   expect(() => collectMemberQuests(f.ctx, f.ctx.sender, sleepy)).toThrow("Finish your own quests first");
 });

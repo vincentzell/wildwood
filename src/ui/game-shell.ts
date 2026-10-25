@@ -40,14 +40,6 @@ const beforeStartShell = String.raw`
 <div id="duelCountdown" hidden>3</div>
 <div id="joystick"><div id="stick"></div></div>
 
-<div id="bootUpgrade" hidden>
-  <div class="modal upgrade-modal" role="dialog" aria-modal="true" aria-labelledby="bootUpgradeTitle">
-    <div class="boots-icon" aria-hidden="true"><span></span><span></span></div>
-    <h2 id="bootUpgradeTitle">TRAILBLAZER BOOTS</h2>
-    <p class="upgrade-stat">MOVE SPEED +25</p>
-    <button id="bootUpgradeClose" type="button">CONTINUE</button>
-  </div>
-</div>
 
 `;
 

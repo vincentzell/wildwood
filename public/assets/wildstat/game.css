@@ -4,6 +4,8 @@
   .stat-tracker > header, .stat-tracker > table, .stat-tracker > footer, .stat-tracker > .stat-tracker-opacity { opacity: var(--stat-tracker-ink, 1); }
   /* Above HUD controls (5–8), below full-screen windows (10+). */
   #hud > .stat-tracker { z-index: 6; }
+  /* Temporary settings must stay above the floating Auto Farm/Mine/Chop control. */
+  #hud > .stat-tracker-settings { z-index: 9; }
   /* Quest tracker: top left under the gem row until dragged. Three quests in play, this map's first and bright. */
   .quest-tracker { position: fixed; top: calc(var(--hud-safe-top) + var(--player-hud-visual-height) + 40px); left: var(--hud-safe-left); z-index: 5; width: min(196px, 46vw); padding: 0 0 4px; border: var(--hud-border) solid var(--hud-frame); border-radius: var(--hud-radius-small); background: var(--hud-surface); box-shadow: var(--ui-shadow); outline: var(--hud-seam); outline-offset: -1px; color: #fff; font: 700 11px/1.25 "Wildstat Chat", sans-serif; pointer-events: auto; }
   .quest-tracker[hidden] { display: none; }
@@ -84,10 +86,22 @@
   .stat-tracker-settings header { padding: 0 4px 0 10px; }
   .stat-tracker-settings-title { font-weight: 800; }
   .stat-tracker-settings .stat-tracker-opacity { display: grid; gap: 2px; margin: 4px 10px 8px; color: var(--muted); font-size: 11px; }
-  .stat-tracker-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; margin: 0 10px 8px; padding: 6px 0 0; border: 0; border-top: 1px solid var(--border); }
-  .stat-tracker-filters legend { float: left; grid-column: 1 / -1; width: 100%; margin-bottom: 2px; padding: 0; color: var(--muted); font-size: 11px; }
+  .stat-tracker-filters, .stat-tracker-compact-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; margin: 0 10px 8px; padding: 6px 0 0; border: 0; border-top: 1px solid var(--border); }
+  .stat-tracker-filters legend, .stat-tracker-compact-options legend { float: left; grid-column: 1 / -1; width: 100%; margin-bottom: 2px; padding: 0; color: var(--muted); font-size: 11px; }
   .stat-tracker-settings label:not(.stat-tracker-opacity) { display: flex; align-items: center; gap: 6px; min-height: 28px; cursor: pointer; }
   .stat-tracker-settings input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--green); cursor: pointer; }
+  .stat-tracker:not(.stat-tracker-settings).is-compact { min-width: 0; width: max-content; font-size: 12px; }
+  .stat-tracker-stat-icon { display: block; width: 16px; height: 16px; }
+  .is-position-locked .stat-tracker-handle, .mysterious-ore-timer.is-position-locked .mysterious-ore-timer-handle { cursor: default; }
+  .is-position-locked .stat-tracker-handle::after, .is-position-locked .mysterious-ore-timer-handle::after { content: ""; display: inline-block; width: 10px; height: 12px; margin-left: 5px; vertical-align: -1px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M2 6V4a4 4 0 0 1 8 0v2h1v10H1V6zm2 0h4V4a2 2 0 0 0-4 0z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .stat-tracker.is-compact header { gap: 4px; padding: 0 4px; }
+  .stat-tracker.is-compact .stat-tracker-time { color: var(--muted); white-space: nowrap; }
+  .stat-tracker.is-compact.is-collapsed .stat-tracker-time { display: none; }
+  .stat-tracker.is-compact th, .stat-tracker.is-compact td { padding: 3px 5px; }
+  .stat-tracker.is-compact footer { gap: 4px; padding: 0 5px; }
+  .stat-tracker-settings .stat-tracker-compact-option { min-height: 44px; margin: 4px 10px 8px; }
+  .stat-tracker-settings .stat-tracker-compact-options label { min-height: 28px; margin: 0; }
+  .stat-tracker-settings > .stat-tracker-reset { margin: 6px 10px 0; }
   .stat-tracker-prestige-reset { margin: 0 10px; padding-top: 6px; border-top: 1px solid var(--border); }
   @media (any-pointer: coarse) { .stat-tracker:not(.is-collapsed) button { min-height: 44px; } }
   /* Folded, it is one row the size of the folded quest tracker, not a tall touch block. */
@@ -378,6 +392,10 @@
   #townBtn.is-town-cooldown .toolbar-icon { visibility: hidden; }
   .inventory-notice { position: absolute; top: 12%; left: calc(50% + 8px); width: 8px; height: 8px; border: 1px solid #fff; border-radius: 50%; background: #e63d3d; box-shadow: 0 1px 0 var(--ui-outline); pointer-events: none; }
   .inventory-notice[hidden] { display: none; }
+  /* Join requests waiting, for the guild's President and Vice President; the Guilds button uses the Inventory's dot. */
+  .guild-request-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border: 1px solid #fff; border-radius: 50%; background: #e63d3d; box-shadow: 0 1px 0 var(--ui-outline); pointer-events: none; }
+  .guild-request-dot[hidden] { display: none; }
+  .has-guild-request-dot:not(#guildBtn) { position: relative; }
 
   .toolbar-label { max-width: 100%; overflow: hidden; color: #fff; font: 900 10px/1 var(--font-rounded); letter-spacing: .01em; text-align: center; text-overflow: clip; white-space: nowrap; -webkit-text-stroke: 0; text-shadow: 1px 1px 0 #000; }
 
@@ -472,6 +490,21 @@
   .settings-panel > .settings-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 2px 12px 12px; }
   .settings-panel > .settings-content::-webkit-scrollbar { display: none; }
   .settings-tab-panel[hidden] { display: none; }
+  .settings-disclosure { margin-top: 12px; border-top: 1px solid rgba(255,255,255,.12); }
+  .settings-disclosure > summary { min-height: 44px; padding: 10px 0; cursor: pointer; color: inherit; font: 900 13px/1.3 var(--font-rounded); }
+  .settings-disclosure > summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
+  .settings-disclosure-description { margin-left: 10px; color: #9a9a9a; font-size: 11px; font-weight: 400; }
+  @media (max-width: 600px) {
+    .settings-disclosure-description { display: block; margin: 4px 0 0 14px; }
+  }
+  .settings-disclosure-content { padding: 0 0 6px 12px; border-left: 2px solid rgba(255,255,255,.12); }
+  .mysterious-ore-timer { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px)); display: flex; align-items: center; height: 30px; width: max-content; max-width: calc(100vw - 24px); overflow: auto; z-index: 6; pointer-events: auto; border: var(--hud-border) solid var(--hud-frame); border-radius: var(--hud-radius-small); background: var(--hud-surface); box-shadow: var(--ui-shadow); outline: var(--hud-seam); outline-offset: -1px; color: #fff; font: 700 13px/1.25 "Wildstat Chat", sans-serif; font-variant-numeric: tabular-nums; }
+  .mysterious-ore-timer[hidden], .mysterious-ore-timer [hidden] { display: none; }
+  .mysterious-ore-timer.is-world-gesture, .mysterious-ore-timer.is-world-gesture * { pointer-events: none; }
+
+  .mysterious-ore-timer button { box-sizing: border-box; height: 100%; min-height: 0; margin: 0; padding: 0 8px; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-shadow: inherit; box-shadow: none; white-space: nowrap; }
+  .mysterious-ore-timer button:active { transform: none; }
+  .mysterious-ore-timer .mysterious-ore-timer-handle { flex: 1; text-align: left; cursor: grab; touch-action: none; }
   .settings-tab-panel .setting-reset { margin-top: 28px; }
   /* The Graphics readout: plain read-only lines, the tip dimmer. */
   .graphics-info { display: grid; gap: 4px; padding: 6px 0 2px; }
@@ -2902,18 +2935,6 @@
     outline-offset: 2px;
   }
 
-  #bootUpgrade {
-    position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    padding: 13px;
-    background: transparent;
-    z-index: 6;
-  }
-
-  #bootUpgrade[hidden] { display: none; }
-
   #duelResult,
   #offlineProgress,
   #playerProfile,
@@ -3944,57 +3965,6 @@
 
   @media (max-width: 420px) {
     .player-profile-title-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  }
-
-  .upgrade-modal {
-    width: var(--game-window-width);
-    max-width: none;
-    border-color: rgba(255,218,94,.52);
-  }
-
-  .boots-icon {
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-    margin: 0 auto 12px;
-  }
-
-  .boots-icon span {
-    position: relative;
-    display: block;
-    width: 40px;
-    height: 58px;
-    border: 4px solid #32190d;
-    border-radius: 8px 8px 12px 12px;
-    background: linear-gradient(90deg, #8a481d 0 24%, #da8e32 24% 76%, #6a3518 76%);
-  }
-
-  .boots-icon span::after {
-    content: "";
-    position: absolute;
-    left: -9px;
-    bottom: -7px;
-    width: 48px;
-    height: 15px;
-    border: 4px solid #32190d;
-    border-radius: 6px 6px 11px 11px;
-    background: #f0c158;
-  }
-
-  .upgrade-modal h2 {
-    margin: 0;
-    color: #ffe777;
-    font-size: clamp(22px, 6vw, 32px);
-    line-height: 1;
-    text-shadow: var(--text-shadow);
-  }
-
-  .upgrade-stat {
-    margin: 12px 0 0;
-    color: #76ed7e;
-    font-size: 18px;
-    font-weight: 900;
-    letter-spacing: .06em;
   }
 
   .modal {

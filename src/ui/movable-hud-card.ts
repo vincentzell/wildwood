@@ -15,6 +15,8 @@ export function installMovableHudCard(options: {
   toggle: () => void;
   /** Whether it can move now (Auto Farm opened is a fixed window); always, by default. */
   movable?: () => boolean;
+  /** Opt in to persistent double-click/tap locking instead of position reset. */
+  lockKey?: string;
 }) {
   const movable = () => options.movable?.() ?? true;
   const { panel, handle } = options;
@@ -26,6 +28,17 @@ export function installMovableHudCard(options: {
   let position: Position | null = null;
   let drag: { id: number; offset: Position; start: Position; moved: boolean } | null = null;
   let suppressClick = false;
+  let locked = false;
+  let pendingTap: ReturnType<typeof setTimeout> | undefined;
+  try { locked = Boolean(options.lockKey && options.storage()?.getItem(options.lockKey) === 'true'); } catch {}
+  function paintLock() {
+    if (!options.lockKey) return;
+    panel.classList.toggle('is-position-locked', locked);
+    handle.title = locked ? 'Position locked. Double-click or double-tap to unlock.'
+      : 'Drag or use arrow keys to move. Double-click or double-tap to lock.';
+    handle.setAttribute('aria-description', handle.title);
+  }
+  paintLock();
   try {
     const saved = JSON.parse(options.storage()?.getItem(options.positionKey) ?? 'null');
     if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) position = { x: saved.x, y: saved.y };
@@ -71,7 +84,7 @@ export function installMovableHudCard(options: {
   }
   listen(handle, 'pointerdown', raw => {
     const event = raw as PointerEvent;
-    if (event.button !== 0 || !movable()) return;
+    if (event.button !== 0 || !movable() || locked) return;
     const bounds = panel.getBoundingClientRect();
     suppressClick = false;
     drag = { id: event.pointerId, offset: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
@@ -96,13 +109,37 @@ export function installMovableHudCard(options: {
   for (const type of ['pointerup', 'lostpointercapture']) listen(handle, type, finishDrag);
   // A cancelled press (the browser took the gesture) never also toggles the card.
   listen(handle, 'pointercancel', () => { finishDrag(); suppressClick = true; });
-  listen(handle, 'dblclick', () => { if (movable()) home(); });
+  function toggleLock() {
+    locked = !locked;
+    if (locked) {
+      finishDrag();
+      const bounds = panel.getBoundingClientRect();
+      position = { x: bounds.left, y: bounds.top };
+      save();
+    }
+    try { options.storage()?.setItem(options.lockKey!, String(locked)); } catch {}
+    paintLock();
+    place();
+  }
+  listen(handle, 'dblclick', () => { if (!options.lockKey && movable()) home(); });
   listen(handle, 'click', raw => {
     if (suppressClick && (raw as MouseEvent).detail !== 0) { suppressClick = false; return; }
+    if (options.lockKey && (raw as MouseEvent).detail !== 0) {
+      if (pendingTap !== undefined) {
+        clearTimeout(pendingTap); pendingTap = undefined;
+        toggleLock();
+      } else pendingTap = setTimeout(() => { pendingTap = undefined; options.toggle(); }, 350);
+      return;
+    }
     options.toggle();
   });
   listen(handle, 'keydown', raw => {
     const event = raw as KeyboardEvent;
+    if (options.lockKey && event.key === 'Home') { event.preventDefault(); return; }
+    if (locked) {
+      if (event.key.startsWith('Arrow')) event.preventDefault();
+      return;
+    }
     if (!movable()) return;
     if (event.key === 'Home') { event.preventDefault(); home(); return; }
     const delta = ({ ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] } as Record<string, number[]>)[event.key];
@@ -138,5 +175,5 @@ export function installMovableHudCard(options: {
   // Expanding settings, help, or More can change the card's height.
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(place);
   observer?.observe(panel);
-  return { place, destroy() { observer?.disconnect(); for (const dispose of cleanup) dispose(); } };
+  return { place, destroy() { if (pendingTap !== undefined) clearTimeout(pendingTap); observer?.disconnect(); for (const dispose of cleanup) dispose(); } };
 }

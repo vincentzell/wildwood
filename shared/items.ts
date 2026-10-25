@@ -33,7 +33,6 @@ export const DIAMOND_GALAXY_ARMOR = "diamond_galaxy_armor";
 export const DIAMOND_GALAXY_BOOTS = "diamond_galaxy_boots";
 export const DIAMOND_GALAXY_BOW = "diamond_galaxy_bow";
 export const BLACK_BOOTS = "black_boots";
-export const BLACK_BOOTS_DROP_DENOMINATOR = 50;
 export const BLACK_BOOTS_SPEED_BONUS = 25;
 export const STARTER_STONE = "starter_stone";
 export const STARTER_BOW = "starter_bow";
@@ -247,7 +246,7 @@ export const ITEM_DEFINITIONS = {
     name: "BLACK BOOTS",
     slot: "FEET",
     acquisition: "INFERNAL_DROP",
-    description: "Quiet boots from Night Forest that increase movement speed.",
+    description: "Quiet boots from before graded gear that increase movement speed. No longer found.",
     stats: ["MOVE SPEED +25"],
   },
   [STARTER_STONE]: {
@@ -265,7 +264,7 @@ export const ITEM_DEFINITIONS = {
     name: "STARTER STAFF",
     slot: "HAND",
     acquisition: "TOWN_DROP",
-    description: "A plain staff from the Smith. Its bolts burst on whatever they hit.",
+    description: "A plain starting staff. Its bolts burst on whatever they hit.",
     stats: ["STARTER WEAPON · NO STATS"],
     weapon: { mode: "RANGED", projectile: "BOLT" },
   },

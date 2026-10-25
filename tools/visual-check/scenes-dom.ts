@@ -26,6 +26,9 @@ import { GROUND, playerAppearance } from "./world";
 import { createBuildsTab } from "../../src/ui/builds-tab";
 import { itemDisplayName } from "../../shared/items";
 import { itemInspectionButtonLabel } from "../../src/ui/item-inspection-controller";
+import { installQuestTracker } from "../../src/ui/quest-tracker";
+import { questTrackerView } from "../../src/ui/quest-board-controller";
+import { CAMPAIGN_MAPS } from "../../shared/campaign-registry";
 
 let markup: Promise<Document> | null = null;
 
@@ -458,6 +461,23 @@ async function builds() {
   await settleCssImages();
 }
 
-export const DOM_SCENES: Record<string, () => Promise<void>> = { icons, hud, wordmark, shops, "gem-shop": gemShop, "server-boost": serverBoost, "exchange-window": exchangeWindow, grades, builds,
+/** The HUD quest tracker: one quest on the player's map, two elsewhere with the map named above the enemy. */
+async function questTracker() {
+  document.body.style.background = GROUND;
+  await importById("hud");
+  const [here, there, far] = CAMPAIGN_MAPS;
+  const quests = [
+    { mapId: here.id, enemy: "Spitter", target: 80, progress: 34 },
+    { mapId: there.id, enemy: "Needle", target: 60, progress: 12, from: "your guild" },
+    { mapId: far.id, enemy: "Brood", target: 100, progress: 0 },
+  ];
+  const memory = new Map<string, string>();
+  installQuestTracker({ view: () => questTrackerView({ day: 0, quests, bonus: 0, guildPoints: 0, guildName: "" }, here.id,
+    id => CAMPAIGN_MAPS.find(map => map.id === id)?.name ?? id), hiddenHere: () => false, enabled: () => true,
+    storage: { getItem: key => memory.get(key) ?? null, setItem: (key, value) => { memory.set(key, value); } } }).render();
+  await settleCssImages();
+}
+
+export const DOM_SCENES: Record<string, () => Promise<void>> = { icons, hud, wordmark, shops, "gem-shop": gemShop, "server-boost": serverBoost, "exchange-window": exchangeWindow, grades, "quest-tracker": questTracker, builds,
   "chat-announcement": chatAnnouncement, "item-window": () => itemWindow(false), "item-window-worn": () => itemWindow(true),
   "profile-own": () => profileWindow(true), "profile-other": () => profileWindow(false) };

@@ -24,7 +24,6 @@ export type GameActionsDeps = {
   closeIconPicker: () => void;
   leaveDuelResult: () => void;
   closeDuelReplay: () => void;
-  closeBootUpgrade: () => void;
   /** The windows a toolbar window closes when it opens, and Escape closes one at a time. */
   windows: {
     profile: ClosableWindow & { isNameEditorOpen: () => boolean; closeNameEditor: () => void };
@@ -71,7 +70,7 @@ export function createGameActions(deps: GameActionsDeps) {
       devPanel.close();
       windows.techTree.close();
     },
-    closeDuelReplay: deps.closeDuelReplay, closeBootUpgrade: deps.closeBootUpgrade,
+    closeDuelReplay: deps.closeDuelReplay,
     resetServerProgress: async () => await coop.client?.resetProgress?.() ?? { ok: false, error: "Connect to your character before resetting." },
     setResetPending: (pending: boolean) => deps.setGameplayPause("reset-progress", pending),
     clearProgressState: deps.clearProgressState,

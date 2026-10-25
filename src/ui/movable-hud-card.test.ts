@@ -3,9 +3,9 @@ import { parseHTML } from 'linkedom';
 import { installMovableHudCard } from './movable-hud-card';
 
 let dispose: (() => void) | undefined;
-afterEach(() => { dispose?.(); vi.unstubAllGlobals(); });
+afterEach(() => { dispose?.(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-function setup(saved?: string) {
+function setup(saved?: string, lock = false, savedLock = false) {
   const { window, document } = parseHTML('<html><body><canvas></canvas><section><button>Card</button><input type="range"></section></body></html>');
   vi.stubGlobal('window', window);
   vi.stubGlobal('innerWidth', 800);
@@ -19,9 +19,10 @@ function setup(saved?: string) {
   panel.getBoundingClientRect = () => ({ left: Number.parseFloat(panel.style.left || '100'), top: Number.parseFloat(panel.style.top || '100'), width: dimensions.width, height: dimensions.height } as DOMRect);
   handle.setPointerCapture = vi.fn();
   const values = new Map(saved ? [['position', saved]] : []);
+  if (savedLock) values.set('locked', 'true');
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
   const toggle = vi.fn();
-  const card = installMovableHudCard({ panel, handle, toggle, storage: () => storage, positionKey: 'position' });
+  const card = installMovableHudCard({ panel, handle, toggle, storage: () => storage, positionKey: 'position', lockKey: lock ? 'locked' : undefined });
   dispose = card.destroy;
   const event = (target: EventTarget, type: string, props: Record<string, unknown> = {}) => target.dispatchEvent(Object.assign(new window.Event(type, { bubbles: true, cancelable: true }), props));
   const pointer = (type: string, x: number, y: number) => event(handle, type, { button: 0, pointerId: 1, clientX: x, clientY: y });
@@ -45,6 +46,57 @@ it('drags from the header, clamps to the viewport, saves, and suppresses the rel
   s.pointer('pointerup', 602, 562);
   s.event(s.handle, 'click', { detail: 1 });
   expect(s.toggle).toHaveBeenCalledOnce();
+});
+
+it('locks with a double click without toggling content, prevents movement and reset, and unlocks', () => {
+  vi.useFakeTimers();
+  const s = setup('{"x":100,"y":100}', true);
+  const doubleClick = () => { s.event(s.handle, 'click', { detail: 1 }); s.event(s.handle, 'click', { detail: 2 }); s.event(s.handle, 'dblclick'); };
+  doubleClick();
+  vi.advanceTimersByTime(400);
+  expect(s.panel.classList.contains('is-position-locked')).toBe(true);
+  expect(s.values.get('locked')).toBe('true');
+  expect(s.toggle).not.toHaveBeenCalled();
+  s.pointer('pointerdown', 110, 110); s.pointer('pointermove', 300, 300); s.pointer('pointerup', 300, 300);
+  s.event(s.handle, 'keydown', { key: 'ArrowRight' });
+  s.event(s.handle, 'keydown', { key: 'Home' });
+  s.event(s.handle, 'keydown', { key: 'l' });
+  expect(JSON.parse(s.values.get('position')!)).toEqual({ x: 100, y: 100 });
+  expect(s.panel.classList.contains('is-position-locked')).toBe(true);
+  doubleClick();
+  expect(s.values.get('locked')).toBe('false');
+  s.event(s.handle, 'keydown', { key: 'ArrowRight' });
+  expect(s.panel.style.left).toBe('110px');
+});
+
+it('restores locking, keeps locked cards on screen after resize, and recognizes two touch-style taps', () => {
+  vi.useFakeTimers();
+  const s = setup('{"x":550,"y":500}', true, true);
+  expect(s.panel.classList.contains('is-position-locked')).toBe(true);
+  vi.stubGlobal('innerWidth', 400);
+  s.event(s.window, 'resize');
+  expect(s.panel.style.left).toBe('192px');
+  // Touch-generated click detail need not increment as desktop clicks do.
+  s.event(s.handle, 'click', { detail: 1 });
+  vi.advanceTimersByTime(100);
+  s.event(s.handle, 'click', { detail: 1 });
+  expect(s.panel.classList.contains('is-position-locked')).toBe(false);
+  expect(s.toggle).not.toHaveBeenCalled();
+});
+
+it('delays only single pointer taps and clears pending taps when disposed', () => {
+  vi.useFakeTimers();
+  const s = setup(undefined, true);
+  s.event(s.handle, 'click', { detail: 1 });
+  expect(s.toggle).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(350);
+  expect(s.toggle).toHaveBeenCalledOnce();
+  s.event(s.handle, 'click', { detail: 0 });
+  expect(s.toggle).toHaveBeenCalledTimes(2);
+  s.event(s.handle, 'click', { detail: 1 });
+  s.card.destroy();
+  vi.advanceTimersByTime(400);
+  expect(s.toggle).toHaveBeenCalledTimes(2);
 });
 
 it('restores and reclamps a card after expansion and resize, with keyboard movement and reset', () => {

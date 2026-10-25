@@ -23,12 +23,10 @@ export function createGemShopController(options: {
   dialog.setAttribute('aria-labelledby', 'gemShopTitle');
   const nativeShop = isNativePreview();
   let diamondLook: HTMLCanvasElement | null = null;
-  if (nativeShop) dialog.setAttribute('aria-describedby', 'gemShopLimit');
   dialog.innerHTML = `
     <div class="gem-shop-content">
       <header class="gem-shop-header">
         <h1 id="gemShopTitle" class="window-banner window-banner--purple"><span>Shop</span></h1>
-        ${nativeShop ? '<p id="gemShopLimit">One of each pack per day · resets at 00:00 UTC</p>' : ''}
       </header>
       <div class="gem-shop-scroll">
         ${nativeShop ? '<div class="gem-shop-packs"></div><p class="gem-shop-notice">Purchases coming soon</p>' : ''}

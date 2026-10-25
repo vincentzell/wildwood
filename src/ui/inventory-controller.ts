@@ -189,6 +189,7 @@ export function createInventoryController(dependencies: InventoryDependencies) {
     keptCopyIds: itemId => keptCopiesOf(itemId).map(copy => copy.id),
     destroyEquipment: dependencies.destroyEquipment,
     destroyEquipmentCopy: dependencies.destroyEquipmentCopy,
+    salePrice: gradeShopSalePrice, sellGradedItem: dependencies.sellGradedItem,
     confirm: request => ask(confirmDestroy, request),
     refineLevel: dependencies.refineLevel,
     showMessage: dependencies.showMessage,

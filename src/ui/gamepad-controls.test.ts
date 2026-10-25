@@ -58,6 +58,20 @@ let cleanup: (() => void) | null = null;
 afterEach(() => { cleanup?.(); cleanup = null; });
 
 describe("a controller", () => {
+  it("reaches settings disclosure headings with the D-pad and activates them with A", () => {
+    const s = setup(`<div role="dialog" aria-modal="true"><button id="first">Game</button>
+      <details><summary id="group">Display &amp; HUD</summary></details><button>Back</button></div>`);
+    cleanup = s.stop;
+    s.place(s.pick("#first"), 0, 0);
+    s.place(s.pick("#group"), 0, 40);
+    const activate = vi.fn();
+    s.pick("#group").addEventListener("click", activate);
+    s.pick("#first").focus();
+    s.press(13);
+    expect(s.document.activeElement?.id).toBe("group");
+    s.press(0);
+    expect(activate).toHaveBeenCalledOnce();
+  });
   it("starts bound actions from the world, and marks the page as using a controller", () => {
     const s = setup(`<canvas></canvas>`);
     cleanup = s.stop;

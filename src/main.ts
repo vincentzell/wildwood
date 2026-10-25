@@ -66,7 +66,6 @@ import { displayedPlayerPowerProgress } from "./game/runtime/render/player-ident
 import type { PlayerDeathAnimationState } from "./game/runtime/player-death-animation";
 import { createCanvasRuntime, gameplayBottomInset } from "./game/runtime/render/canvas-runtime";
 import { APP_SHELL_STORAGE_KEYS, GAME_VERSION, MUSIC_VOLUME_KEY, SFX_VOLUME_KEY } from "./game/runtime/game-settings";
-import { createWorldProgressionController } from "./game/runtime/world-progression-controller";
 import { createBossController } from "./game/runtime/boss/boss-controller";
 import { BOSSES, BOSS_KINDS } from "./game/runtime/boss/boss-registry";
 import { createMapController } from "./game/runtime/map-controller";
@@ -111,7 +110,7 @@ import { MAX_PLAYER_STAT, PLAYER_SPAWN } from "../shared/rules";
   const {
     canvas, gameOverEl, deathCountdownEl, hpText, playerHudProfileIcon, playerHudProfileGear, hudGemWallet,
     hudGemBalance, minimapButton, toolbar, settingsBtn, settingsPanel, inventoryPanel, inventoryCharacterCanvas,
-    bootUpgradeEl, bootUpgradeClose, joystickEl, stickEl, duelResultEl, watchDuelReplayBtn, cutsceneOverlayEl,
+    joystickEl, stickEl, duelResultEl, watchDuelReplayBtn, cutsceneOverlayEl,
     playerProfileEl, playerProfileIcon, profileCharacterCanvas, closeProfileIconPickerBtn,
   } = gameElements;
   const staticWorldLayer = createWebGLStaticWorldLayer(canvas);
@@ -316,20 +315,6 @@ import { MAX_PLAYER_STAT, PLAYER_SPAWN } from "../shared/rules";
     powerForEquipment, isDueling, saveProgress, showMessage,
   });
   const renderInventory = inventoryController.render;
-  const worldProgression = createWorldProgressionController({
-    player,
-    bootsPickup,
-    movementSpeedForBoots: (bootsEquipped) => progress.movementSpeedForEquipment(bootsEquipped),
-    // The boots this pickup once gave are gone; the pickup itself is already
-    // marked collected for every save, so nothing is left to hand over.
-    collectBoots: () => {},
-    saveProgress: () => saveProgress(),
-    renderInventory,
-    pause: () => setGameplayPause("boot-upgrade", true),
-    resume: () => setGameplayPause("boot-upgrade", false),
-    bootUpgrade: bootUpgradeEl,
-    bootUpgradeClose,
-  });
   const playerInput = createPlayerInputController({
     canvas,
     joystick: joystickEl,
@@ -715,7 +700,7 @@ import { MAX_PLAYER_STAT, PLAYER_SPAWN } from "../shared/rules";
   session = createGameSession({
     coop: coopAccess, world: bootstrap, camera, canvasRuntime, e: gameElements, currentMapId: () => currentMapId, setCurrentMap, inTutorial,
     mapBalanceReady, appShell, playerInput, autoFarm, duelSession, duelRuntime, profileWindow, hideStartScreen: () => startup.hideStart(),
-    deathScreen, bossFightMemory, recordLocalDeath, clearLocalDeath: () => { localPlayerDeath = null; }, worldProgression, playerController,
+    deathScreen, bossFightMemory, recordLocalDeath, clearLocalDeath: () => { localPlayerDeath = null; }, playerController,
     hasSavedProgress: () => progress.hasSavedProgress(), mapController, syncMapMusic, bossController, stations: town,
     places: [soulDimension, guildHall], enemySystems: [personalBosses, proceduralBoss, enemySimulation], playerCombat, updateRespawns,
     effects, updateHud, runtimeHud, presentation,
@@ -886,7 +871,6 @@ import { MAX_PLAYER_STAT, PLAYER_SPAWN } from "../shared/rules";
     logPickup, showMessage, clearInput: playerInput.clear, minimizeChat: chatRuntime.minimize, openSupporter: openProfileIconPicker,
     drawDiamondLook: createDiamondLookDrawer(playerAppearanceAssets),
     closeIconPicker: closeProfileIconPicker, leaveDuelResult, closeDuelReplay: duelRuntime.closeReplayWindow,
-    closeBootUpgrade: worldProgression.closeBootUpgrade,
     windows: {
       profile: profileWindow, guild: guildPanel, mapGuide, slotUpgrades, leaderboard, devPanel, techTree, rewardedRespawnAd,
     },

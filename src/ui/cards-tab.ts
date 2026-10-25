@@ -11,6 +11,13 @@ import type { ItemInspectionAction } from "./item-inspection-controller";
 
 const RARITY_ORDER = { regular: 0, elite: 1, boss: 2 } as const;
 const CARD_ORDER = new Map(CARDS.map((card, index) => [card.id, index]));
+const pendingTilePortraits = new WeakMap<HTMLElement, () => void>();
+function loadTilePortrait(tile: HTMLElement) {
+  const load = pendingTilePortraits.get(tile);
+  if (!load) return;
+  pendingTilePortraits.delete(tile);
+  load();
+}
 /** The campaign's maps first, then the Endless Warden cards, then the tree cards. */
 const zoneRank = (card: CardDefinition) => card.tree ? 2 : card.endless ? 1 : 0;
 /** Map order, then regular, elite, boss. */
@@ -18,7 +25,7 @@ export const byMapThenRarity = (a: CardDefinition, b: CardDefinition) =>
   zoneRank(a) - zoneRank(b) || a.tier - b.tier || RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || (CARD_ORDER.get(a.id) ?? 0) - (CARD_ORDER.get(b.id) ?? 0);
 
 /** One card as a bag-style tile: its enemy's name, its portrait and the count held. Not found yet, only its shadow. */
-export function cardTile(card: CardDefinition, count: number, onPick: () => void, found = true) {
+export function cardTile(card: CardDefinition, count: number, onPick: () => void, found = true, deferPortrait = false) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `inventory-item is-filled is-card is-${card.rarity}${found ? "" : " is-unfound"}`;
@@ -30,7 +37,10 @@ export function cardTile(card: CardDefinition, count: number, onPick: () => void
   image.className = "inventory-item-art card-tile-art";
   image.setAttribute("aria-hidden", "true");
   art.append(image);
-  void cardPortrait(card.id, !found).then(source => { if (source) image.style.backgroundImage = `url(${source})`; });
+  pendingTilePortraits.set(button, () => {
+    void cardPortrait(card.id, !found).then(source => { if (source) image.style.backgroundImage = `url(${source})`; });
+  });
+  if (!deferPortrait) loadTilePortrait(button);
   const label = document.createElement("span");
   label.className = "item-tier-label is-above";
   label.textContent = card.enemy;
@@ -124,7 +134,7 @@ export function cardDetailRequest(port: CardsPort, cardId: string, after: (resul
     context: `${typeName} Card · ${owned > 0 ? `${owned.toLocaleString("en-US")} Owned · ${copies} Equipped` : "Not Found Yet"}`,
     effects: card.effects.map(effect => ({ text: cardEffectText(effect), cost: effect.value < 0 })),
     odds: `${cardOddsText(card, chance)} · ${cardSureText(card, cardSureByKills(card, port.cardHunter()))}`,
-    note: slotsText || (owned > 0 && error && copies < owned ? `${error} Remove one first.` : owned > 0 ? "" : "Drops rarely from this enemy."),
+    note: slotsText || (owned > 0 && error && copies < owned ? `${error} Remove one first.` : ""),
     actions,
   };
 }
@@ -203,6 +213,16 @@ export function createCardsTab(options: {
   element.hidden = true;
   const views = document.createElement("div");
   views.className = "cards-views-bar";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "cards-search";
+  search.placeholder = "Search names, descriptions or areas";
+  search.setAttribute("aria-label", "Search names, descriptions or areas");
+  search.autocomplete = "off";
+  const searchStatus = document.createElement("p");
+  searchStatus.className = "cards-search-status";
+  searchStatus.setAttribute("role", "status");
+  searchStatus.hidden = true;
   const collection = document.createElement("section");
   collection.className = "cards-collection";
   const count = document.createElement("span");
@@ -217,8 +237,46 @@ export function createCardsTab(options: {
   collection.append(count, progress, zones);
   const equip = document.createElement("section");
   equip.className = "cards-equip";
-  element.append(views, collection, equip);
+  element.append(views, search, searchStatus, collection, equip);
   const ordered = [...CARDS].sort(byMapThenRarity);
+  // Built once, using the same names and effect descriptions as the card details.
+  const searchIndex = new Map(ordered.map(card => [card.id,
+    [cardName(card), mapName(card.mapId), cardOrigin(card), ...card.effects.map(effect =>
+      `${effect.effect.replace(/([a-z])([A-Z])/g, "$1 $2")} ${cardEffectText(effect)}`)].join(" ").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [],
+  ]));
+  let query = "";
+  // Search-only expansion never changes the player's saved area preferences.
+  let searchOpen: Record<string, boolean> = {};
+
+  function filterCards() {
+    const terms = query.match(/[\p{L}\p{N}]+/gu) ?? [];
+    const scope = view === "cards" ? zones : equip;
+    let matches = 0;
+    for (const tile of scope.querySelectorAll<HTMLElement>(".inventory-item[data-card-id]")) {
+      const words = searchIndex.get(tile.dataset.cardId!) ?? [];
+      const visible = terms.every(term => words.some(word => word.startsWith(term)));
+      tile.hidden = !visible;
+      if (visible) {
+        matches++;
+        if (!tile.closest<HTMLElement>(".cards-zone-grid")?.hidden) loadTilePortrait(tile);
+      }
+    }
+    for (const zone of zones.querySelectorAll<HTMLElement>(".cards-zone")) {
+      zone.hidden = Boolean(query) && !zone.querySelector(".inventory-item:not([hidden])");
+    }
+    searchStatus.hidden = !query;
+    searchStatus.textContent = query ? matches ? `${matches} matching card${matches === 1 ? "" : "s"}` : "No matching cards in this view." : "";
+  }
+  search.addEventListener("input", () => {
+    const next = search.value.trim().toLowerCase();
+    if (next === query) return;
+    const changedMode = Boolean(next) !== Boolean(query);
+    query = next;
+    if (changedMode) searchOpen = {};
+    // Entering search exposes collapsed zones; subsequent keystrokes only hide/show tiles.
+    if (changedMode && view === "cards") redraw();
+    else filterCards();
+  });
   const mapIds = [...new Set(ordered.map(card => card.mapId))];
   let open: Record<string, boolean> | null = null;
   let view: CardsView = storedView();
@@ -391,13 +449,13 @@ export function createCardsTab(options: {
     if (!owned.length) {
       const none = document.createElement("p");
       none.className = "cards-equip-note";
-      none.textContent = `No ${CARD_SLOT_NAMES[type]} cards yet. Cards drop rarely from enemies and bosses.`;
+      none.textContent = `No ${CARD_SLOT_NAMES[type]} cards yet. Cards drop from enemies, bosses and trees, and the Card Seller in Town sells some.`;
       yours.append(none);
     }
     const tiles = document.createElement("div");
     tiles.className = "inventory-items cards-equip-grid";
     tiles.append(...owned.map(card => {
-      const tile = cardTile(card, held[card.id] ?? 0, () => { picked = card.id; redraw(); });
+      const tile = cardTile(card, held[card.id] ?? 0, () => { picked = card.id; redraw(); }, true, true);
       tile.setAttribute("aria-pressed", String(card.id === picked));
       if (activeCopies(active, card.id)) tile.classList.add("is-equipped");
       return tile;
@@ -407,8 +465,11 @@ export function createCardsTab(options: {
   }
 
   function setOpen(mapId: string, value: boolean) {
-    open = { ...(open ?? {}), [mapId]: value };
-    storeZones(open);
+    if (query) searchOpen = { ...searchOpen, [mapId]: value };
+    else {
+      open = { ...(open ?? {}), [mapId]: value };
+      storeZones(open);
+    }
     redraw();
   }
 
@@ -419,7 +480,7 @@ export function createCardsTab(options: {
     progressFill.style.width = `${(100 * foundCount / Math.max(1, ordered.length)).toFixed(1)}%`;
     zones.replaceChildren(...mapIds.map(mapId => {
       const cards = ordered.filter(card => card.mapId === mapId);
-      const isOpen = Boolean(open![mapId]);
+      const isOpen = query ? searchOpen[mapId] ?? true : Boolean(open![mapId]);
       const section = document.createElement("section");
       section.className = `cards-zone${isOpen ? " is-open" : ""}`;
       section.dataset.mapId = mapId;
@@ -442,8 +503,8 @@ export function createCardsTab(options: {
       const list = document.createElement("div");
       list.className = "inventory-items cards-zone-grid";
       list.hidden = !isOpen;
-      if (isOpen) list.append(...cards.map(card => {
-        const tile = cardTile(card, held[card.id] ?? 0, () => options.onInspect(card.id), found(card));
+      if (isOpen || query) list.append(...cards.map(card => {
+        const tile = cardTile(card, held[card.id] ?? 0, () => options.onInspect(card.id), found(card), true);
         if (activeCopies(active, card.id)) tile.classList.add("is-equipped");
         return tile;
       }));
@@ -465,6 +526,7 @@ export function createCardsTab(options: {
     equip.hidden = view !== "equip";
     if (view === "cards") renderCollection(held, active);
     else renderEquip(held, active, slots);
+    filterCards();
   }
 
   return {

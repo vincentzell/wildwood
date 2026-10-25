@@ -1,7 +1,8 @@
 import { sendPersonalMail } from "./dev-review-mail";
 import { moderatePublicChatMessage } from "./chat-moderation";
 import { GUILD_MEMBER_LIMIT } from "../../shared/guilds";
-import { SenderError } from "spacetimedb/server";
+import { SenderError, t } from "spacetimedb/server";
+import { guildTables } from "./guild-tables";
 import type { ModuleReducerCtx as Ctx } from "./index";
 import type { Identity } from "spacetimedb";
 
@@ -46,4 +47,14 @@ export function guildAdmissionAction(ctx: Ctx, action: string, guildId: bigint, 
     identity: applicant, title: `${guild.name}: Join request ${action === "accept" ? "accepted" : "denied"}`,
     body: `${guild.name} ${action === "accept" ? "accepted" : "denied"} your request to join.${action === "accept" ? " You are now a member." : ""}${safeNote ? `\n\nNote from guild leadership:\n${safeNote}` : ""}` });
   ctx.db.guildJoinRequest.identity.delete(applicant);
+}
+
+/** The join requests waiting on the caller's guild, for its President and Vice President only: the red dot. */
+export function registerGuildJoinRequestView(spacetimedb: any) {
+  return spacetimedb.view({ name: "my_guild_join_requests", public: true }, t.array(guildTables.guildJoinRequest.rowType), (ctx: any) => {
+    const member = ctx.db.guildMember.identity.find(ctx.sender);
+    const guild = member && ctx.db.guild.id.find(member.guildId);
+    if (!guild || (!guild.leader.equals(ctx.sender) && !member.vicePresident)) return [];
+    return [...ctx.db.guildJoinRequest.guildId.filter(guild.id)];
+  });
 }

@@ -13,6 +13,9 @@ export type InventoryDeleteModeDependencies = {
   /** Copy id 0n is the item's first copy; the server moves a kept copy into its place. */
   destroyEquipmentCopy?: (itemId: string, copyId: bigint) => Promise<Result>;
   confirm: ConfirmPrompt;
+  /** What the sellers pay for one copy, for gear they buy; it is sold for that, as the item window's trash can does. */
+  salePrice?: (itemId: string) => number | undefined;
+  sellGradedItem?: (itemId: string, copyId: bigint) => Promise<Result>;
   /** One copy's refine (★N), so the prompt can warn before refined gear goes. */
   refineLevel?: (itemId: string, copyId: bigint) => number;
   showMessage: (message: string, color?: string) => void;
@@ -30,7 +33,8 @@ const keyOf = (itemId: string, copyId: bigint) => `${itemId}:${copyId}`;
  * Deleting several bag items at once. The trash button beside Equip best
  * turns the mode on and then reads "Delete"; in the mode a tap on a bag item
  * picks it (a red highlight) instead of opening it, and Delete asks once for
- * everything picked. Cancel, or Delete with nothing picked, leaves the mode.
+ * everything picked. Gear the sellers buy is sold for gold, the rest destroyed.
+ * Cancel, or Delete with nothing picked, leaves the mode.
  * Equipped gear is never in the bag grid, so it cannot be picked.
  */
 export function createInventoryDeleteMode(dependencies: InventoryDeleteModeDependencies) {
@@ -114,20 +118,32 @@ export function createInventoryDeleteMode(dependencies: InventoryDeleteModeDepen
       picks.set(itemId, [...(picks.get(itemId) ?? []), BigInt(key.slice(split + 1))]);
     }
     const count = selected.size;
+    const priceOf = (itemId: string) => dependencies.sellGradedItem ? dependencies.salePrice?.(itemId) : undefined;
+    const allSold = [...picks.keys()].every(itemId => priceOf(itemId) !== undefined);
+    const gold = [...picks].reduce((total, [itemId, copyIds]) => total + (priceOf(itemId) ?? 0) * copyIds.length, 0);
     const refined = [...picks].reduce((total, [itemId, copyIds]) =>
       total + copyIds.filter(copyId => (dependencies.refineLevel?.(itemId, copyId) ?? 0) > 0).length, 0);
     if (!await dependencies.confirm({
-      message: `Delete ${count} selected item${count === 1 ? "" : "s"} permanently?`,
-      details: [{ label: "This cannot be undone", value: "No refund" },
+      // All sold: the prompt says so; anything the sellers do not buy is deleted.
+      message: allSold ? `Sell ${count} selected item${count === 1 ? "" : "s"}?` : `Delete ${count} selected item${count === 1 ? "" : "s"} permanently?`,
+      details: [...(gold ? [{ label: "You Get", value: `${gold.toLocaleString("en-US")} Gold` }] : []),
         ...(refined ? [{ label: "Refined Gear", value: `${refined} Item${refined === 1 ? "" : "s"} ★` }] : [])],
-      confirmLabel: "Delete", danger: true,
+      confirmLabel: allSold ? "Sell" : "Delete", danger: true,
     })) return;
     busy = true;
     sync();
-    let deleted = 0;
+    let deleted = 0, sold = 0;
     let error = "";
     const destroyCopy = dependencies.destroyEquipmentCopy;
     for (const [itemId, copyIds] of picks) {
+      // Kept copies first, then the first copy: the server moves a kept one into its place.
+      if (priceOf(itemId) !== undefined) {
+        for (const copyId of [...copyIds].sort((a, b) => Number(a === 0n) - Number(b === 0n))) {
+          const result = await dependencies.sellGradedItem!(itemId, copyId);
+          if (result?.ok) sold += priceOf(itemId)!; else error ||= result?.error ?? "Not Connected";
+        }
+        continue;
+      }
       const kept = copyIds.filter(copyId => copyId !== 0n);
       for (const copyId of kept) {
         const result = destroyCopy ? await destroyCopy(itemId, copyId) : undefined;
@@ -144,7 +160,8 @@ export function createInventoryDeleteMode(dependencies: InventoryDeleteModeDepen
     sync();
     dependencies.onModeChange?.(false);
     dependencies.onDeleted();
-    if (deleted) dependencies.showMessage(`${deleted} ITEM${deleted === 1 ? "" : "S"} DESTROYED`, "#ff9b91");
+    if (sold) dependencies.showMessage(`Sold for ${sold.toLocaleString("en-US")} Gold`, "#ffd75e");
+    if (deleted) dependencies.showMessage(`${deleted} Item${deleted === 1 ? "" : "s"} Destroyed`, "#ff9b91");
     if (error) dependencies.showMessage(error, "#ff9b91");
   }
 

@@ -19,7 +19,6 @@ import type { createPlayerInputController } from "./player-input-controller";
 import type { createCamera } from "./render/camera";
 import type { createCanvasRuntime } from "./render/canvas-runtime";
 import type { createPresentationInterpolator } from "./render/presentation-interpolator";
-import type { createWorldProgressionController } from "./world-progression-controller";
 
 type Updatable = { update: (dt: number) => void };
 type GameElements = ReturnType<typeof createGameElements>;
@@ -46,7 +45,6 @@ export type GameSessionWiringDeps = {
   /** The local player's death animation and corpse, and clearing it again. */
   recordLocalDeath: () => void;
   clearLocalDeath: () => void;
-  worldProgression: Pick<ReturnType<typeof createWorldProgressionController>, "hideBootUpgrade">;
   playerController: PlayerController;
   hasSavedProgress: () => boolean;
   mapController: ReturnType<typeof createMapController>;
@@ -111,7 +109,6 @@ export function createGameSession(deps: GameSessionWiringDeps) {
     beginAdventure: () => { client?.beginAdventure?.(); },
     syncStoppedPosition: () => { if (!inTutorial()) client?.correctMovementPosition?.(player.x, player.y, true); },
     resetPlayer: preserveStats => {
-      deps.worldProgression.hideBootUpgrade();
       deps.playerController.reset(preserveStats, deps.hasSavedProgress());
     },
     resolvePortalCollision: mapController.resolvePortalCollision,

@@ -530,6 +530,11 @@
       "spent:u32",
       "levels:string"
     ],
+    "my_guild_join_requests": [
+      "identity:identity",
+      "guildId:u64",
+      "requestedAt:u64"
+    ],
     "my_ignored_drops": [
       "key:string",
       "identity:identity",

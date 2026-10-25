@@ -124,6 +124,7 @@ type ExpectedApiKey =
   | "fallIntoWell"
   | "useTownDoor"
   | "guildHall"
+  | "guildJoinRequests"
   | "upgradeGuildHall"
   | "useGuildHallDoor"
   | "connect"

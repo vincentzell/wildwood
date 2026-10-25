@@ -260,7 +260,6 @@ export function createMapGuidePanel(deps: MapGuidePanelDeps) {
       deps.closeCompetingWindows();
     },
     clearPlayerInput: deps.clearInput, power: deps.power, progress: coop.client, prestigeExpanded: deps.prestigeExpanded,
-    lootFilter: coop.client,
     travel: {
       prefer: deps.preferTravel,
       // From the Town through its portal at once; from anywhere else straight there, with the portal's checks.

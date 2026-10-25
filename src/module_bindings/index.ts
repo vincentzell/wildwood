@@ -323,6 +323,7 @@ import MyGemPurchasesRow from "./my_gem_purchases_table";
 import MyGemWalletRow from "./my_gem_wallet_table";
 import MyGoldRow from "./my_gold_table";
 import MyGuildHallRow from "./my_guild_hall_table";
+import MyGuildJoinRequestsRow from "./my_guild_join_requests_table";
 import MyIgnoredDropsRow from "./my_ignored_drops_table";
 import MyInventoryCapacityRow from "./my_inventory_capacity_table";
 import MyItemCollectionRow from "./my_item_collection_table";
@@ -1521,6 +1522,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyGuildHallRow),
+  myGuildJoinRequests: __table({
+    name: 'my_guild_join_requests',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyGuildJoinRequestsRow),
   myIgnoredDrops: __table({
     name: 'my_ignored_drops',
     indexes: [

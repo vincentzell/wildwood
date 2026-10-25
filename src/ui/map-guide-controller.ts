@@ -17,7 +17,6 @@ import { createSpawnSites, createWorldLayout, mapSpawnCamps } from "../game/worl
 import { ENEMY_TYPES, REWARD_DATA, type RewardType } from "../game/enemies";
 import { itemArtImage, itemPresentation } from "../game/item-presentation";
 import { drawPortalMapMarker } from "../game/portal-presentation";
-import { createLootFilterWindow, type LootFilterPort } from "./loot-filter-window";
 import { liveRewardText, type RewardLabelContext } from "../game/runtime/reward-labels";
 import { recommendedMapPower } from "../game/runtime/auto-farm/auto-farm-power";
 import { prestigeRequirementHint } from "../../shared/prestige";
@@ -65,8 +64,6 @@ type MapGuideDependencies = {
   clearPlayerInput: () => void;
   /** Whether the player has ever had this item, for the Gear Collection marks on the drops. */
   collected?: (itemId: string) => boolean;
-  /** The coop session, for the account's loot filter. Without it the map has no Loot filter button. */
-  lootFilter?: LootFilterPort | null;
   /** The live enemies of the player's map, for its Enemy Index; other maps read the shipped balance. */
   enemies?: readonly EnemyState[];
   /** What a kill's reward is worth to the player, as enemy labels show it. */
@@ -317,10 +314,6 @@ export function createMapGuideController(elements: MapGuideElements, dependencie
   }
   travelButton.addEventListener("click", () => travelTo(shown()));
 
-  const dropsHeader = dropItems.parentElement?.querySelector("header");
-  const lootFilter = dropsHeader
-    ? createLootFilterWindow({ anchor: dropsHeader, cards: dropItems, port: () => dependencies.lootFilter })
-    : null;
 
   function renderZoneLabels(zones: MapGuideZone[], boss: MapGuideBoss) {
     const labels = zones.map((zone) => {
@@ -355,6 +348,7 @@ export function createMapGuideController(elements: MapGuideElements, dependencie
   }
 
   // The Gear Collection: how many of this map's drops the player has ever had, beside the drops' heading.
+  const dropsHeader = dropItems.parentElement?.querySelector("header");
   const collectedCount = document.createElement("span");
   collectedCount.className = "map-guide-collected-count";
   collectedCount.hidden = true;
@@ -410,7 +404,7 @@ export function createMapGuideController(elements: MapGuideElements, dependencie
       const note = document.createElement("p");
       note.className = "enemy-index-note";
       note.style.gridColumn = "1 / -1";
-      note.textContent = "No items drop here. Gear is bought at the Smith in Town.";
+      note.textContent = "No items drop here. Gear is bought from the Weapon and Armor Sellers in Town, or crafted at the Smith.";
       dropItems.replaceChildren(note);
       return;
     }
@@ -511,7 +505,6 @@ export function createMapGuideController(elements: MapGuideElements, dependencie
     renderGoal(mapId);
     if (enemyRows) renderEnemyRows(mapId);
     renderDrops(mapId);
-    lootFilter?.setMap(dependencies.mapName(mapId), mapGuideDrops(mapId).map((drop) => drop.itemId));
     drawMap();
   }
 
@@ -562,7 +555,6 @@ export function createMapGuideController(elements: MapGuideElements, dependencie
 
   function close() {
     if (overlay.hidden) return;
-    lootFilter?.close();
     travelNote = null;
     overlay.hidden = true;
     trigger.setAttribute("aria-expanded", "false");

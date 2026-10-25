@@ -22,6 +22,8 @@ import { CARD_SHOP_ROTATION_MS, cardShopOffer, cardShopRotation } from "../../sh
 import { writeProgressAndPresentation } from "../../spacetimedb/src/player-power";
 import { readPlayerProgress } from "../../spacetimedb/src/wide-stats";
 import { BUILD_SLOTS } from "../../shared/builds";
+import { goldFor } from "../../spacetimedb/src/gold";
+import { gradeShopSalePrice } from "../../shared/grade-shop";
 
 type BowRoll = { arrowStorm: number; ricochet: number; piercingShot: number };
 const NO_ROLL: BowRoll = { arrowStorm: 0, ricochet: 0, piercingShot: 0 };
@@ -34,81 +36,8 @@ function waitingOffer(world: ScenarioWorld, player: ScenarioPlayer, itemId: stri
 }
 const offersOf = (world: ScenarioWorld, player: ScenarioPlayer) => [...world.db.pendingEquipmentOffer.identity.filter(player.identity)].map((row: any) => row.itemId);
 const filtered = (world: ScenarioWorld, player: ScenarioPlayer) => [...world.db.playerIgnoredDrop.identity.filter(player.identity)].map((row: any) => row.itemId).sort();
-const dropsOf = (world: ScenarioWorld, player: ScenarioPlayer) => [...world.db.playerItemDrop.byIdentity.filter(player.identity)].map((row: any) => row.itemId);
 
 describe("the loot filter", () => {
-  it("GEAR-18 a slot or item switched off stops landing and clears its offers, gifts still arrive, changes elsewhere show, a late answer never undoes a newer press", async () => {
-    const world = gameWorld({ seed: 1 });
-    const ann = world.join("Ann");
-    waitingOffer(world, ann, SAMURAI_HAT);
-    waitingOffer(world, ann, IRON_BOW);
-    ann.disconnect();
-    const tab = await playAs(world, "Ann", { client: { latencyMs: 100 } });
-    const session = tab.network.players.get("Ann")!;
-    const sheet = () => windowTitled(tab, "lootFilterTitle");
-    const chip = () => sheet()!.querySelector<HTMLButtonElement>("[data-filter-id='slot:HEAD']")!;
-    const hatRow = () => sheet()!.querySelector<HTMLButtonElement>(`[data-item-id='${BASIC_PAPER_HAT}']`)!;
-    const autoEquip = () => sheet()!.querySelector<HTMLButtonElement>("[data-setting='autoEquipBest']")!;
-
-    // The map's window lists the forest's paper hat; Helmets off turns the slot off for good.
-    tab.tap("minimapButton");
-    await tab.play(100);
-    press(tab, tab.element("mapGuide").querySelector("[aria-haspopup=dialog]"));
-    await playUntil(tab, () => Boolean(sheet()), "the loot filter opens");
-    expect(hatRow().getAttribute("aria-checked")).toBe("true");
-    press(tab, chip());
-    await playUntil(tab, () => filtered(world, ann).includes("slot:HEAD"), "the server lists Helmets off");
-    expect(chip().getAttribute("aria-pressed")).toBe("false");
-    expect([hatRow().getAttribute("aria-checked"), hatRow().disabled]).toEqual(["false", true]);
-    // The helmet waiting for Keep is gone; the bow is not a helmet and still waits.
-    expect(offersOf(world, ann)).toEqual([IRON_BOW]);
-
-    // Kills on the forest drop no hat while Helmets are off.
-    for (let report = 0; report < 20; report++) {
-      await vi.advanceTimersByTimeAsync(60_000);
-      reportKills(world, session, 30, 60_000);
-      deliverRows(tab);
-    }
-    expect(dropsOf(world, ann)).toEqual([]);
-    expect(serverBag(ann)).not.toContain(BASIC_PAPER_HAT);
-
-    // A gift is deliberate: it arrives even though Helmets are off.
-    world.setup(ctx => ctx.db.playerItemGift.insert({ key: "scenario:hat", identity: ann.identity, campaign: "scenario", itemId: BASIC_PAPER_HAT, claimed: false, createdAt: ctx.timestamp }));
-    deliverRows(tab);
-    expect((await answered(tab, tab.coop.claimItemGift("scenario:hat"))).ok).toBe(true);
-    expect(serverBag(ann)).toContain(BASIC_PAPER_HAT);
-
-    // Turned back on elsewhere (another device): the open window follows.
-    session.call("setIgnoredDrops", { itemIds: ["slot:HEAD"], ignored: false });
-    deliverRows(tab);
-    await playUntil(tab, () => chip().getAttribute("aria-pressed") === "true" && !hatRow().disabled, "the window shows Helmets on");
-
-    // Two quick presses on the hat: the answer to the first never undoes the second.
-    press(tab, hatRow());
-    await tab.play(50);
-    press(tab, hatRow());
-    expect(hatRow().getAttribute("aria-checked")).toBe("true");
-    for (let step = 0; step < 8; step++) {
-      await tab.play(25, 25);
-      expect(hatRow().getAttribute("aria-checked")).toBe("true");
-    }
-    expect(filtered(world, ann)).toEqual([]);
-
-    // On again, the same kills drop the hat.
-    for (let report = 0; report < 200 && !dropsOf(world, ann).length; report++) {
-      await vi.advanceTimersByTimeAsync(60_000);
-      reportKills(world, session, 30, 60_000);
-      deliverRows(tab);
-    }
-    expect(dropsOf(world, ann)).toEqual([BASIC_PAPER_HAT]);
-
-    // Auto equip upgrades is the account's: switched off here, the server keeps it off.
-    expect(autoEquip().getAttribute("aria-checked")).toBe("true");
-    press(tab, autoEquip());
-    await playUntil(tab, () => world.db.playerLootSetting.identity.find(ann.identity)?.autoEquipBest === false, "the server keeps auto equip off");
-    expect(autoEquip().getAttribute("aria-checked")).toBe("false");
-  }, 60_000);
-
   it("GEAR-18 the filter and Auto equip are the account's: they outlast prestige and Reset Save and join the account on sign-in", () => {
     const world = scenarioWorld();
     const ann = world.join("Ann");
@@ -360,10 +289,12 @@ describe("locks and deleting", () => {
     await tab.play(200);
     expect(serverBag(ann)).toContain("crude_light_helmet");
     expect(picked()).toEqual(["crude_bow", "crude_light_helmet"]);
-    // Accepted once: both go, the worn bow and everything unpicked stays.
+    // Accepted once: both are sold for what the sellers pay, as one at a time; the worn bow and everything unpicked stays.
+    const goldBefore = goldFor({ db: world.db } as never, ann.identity);
     press(tab, toolbar("delete"));
     await answerConfirm(tab, true);
     await playUntil(tab, () => !serverBag(ann).includes("crude_light_helmet") && keptCopies(world, ann).length === 0, "the picks are deleted");
+    expect(goldFor({ db: world.db } as never, ann.identity) - goldBefore).toBe(BigInt(gradeShopSalePrice("crude_bow")! + gradeShopSalePrice("crude_light_helmet")!));
     expect(serverBag(ann)).toEqual(expect.arrayContaining(["crude_bow", "rare_bow", "starter_stone"]));
     expect(ann.progress().equippedRightHand).toBe("crude_bow");
     expect(toolbar("delete").getAttribute("aria-pressed")).toBe("false");

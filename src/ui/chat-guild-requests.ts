@@ -83,7 +83,9 @@ export function createChatGuildRequests(options: {
     finally { if (expected === generation) { busy = false; render(); } }
   }
   updateVisibility();
-  return { tabs, root, isSelected: () => visible && selected,
+  return { tabs, root, isSelected: () => visible && selected, requestsTab: buttons[1],
+    /** Loads the list again while it is open, when a request arrives or is answered elsewhere. */
+    reload: () => { if (!busy) void load(); },
     refresh(identity: string, nextGuild: string, show: boolean) {
       const nextContext = `${identity}:${nextGuild}`;
       if (nextContext !== context || (!show && visible)) {

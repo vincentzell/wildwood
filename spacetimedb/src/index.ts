@@ -147,6 +147,7 @@ import { pausedResearch, pauseActiveResearch, takePausedResearch } from "./resea
 import { createSocialService, socialSnapshot, visibleSocialMessages, latestSocialMessages, socialHistoryPage } from "./social-service";
 import { playerDirectoryJson } from "./player-directory";
 import { guildTables } from "./guild-tables";
+import { registerGuildJoinRequestView } from "./guild-admissions";
 import { createGuildService } from "./guild-service";
 import { registerGuildReducers } from "./guild-reducers";
 import { aggroChallengeRun, endAggroChallenge, playerAggroChallenge, playerAggroChallengeParked, registerAggroReducers, restartAggroRunOnDeath } from "./aggro-challenge";
@@ -3810,6 +3811,7 @@ export const { buyGradeGear } = registerGradeShop(spacetimedb, { requireControll
 export const { claimStarterWeapon, myStarterWeapon } = registerStarterChest(spacetimedb, { requireControllingPlayer, activeDuelFor });
 export const { craftGradeItem, reforgeWeapon, craftGradeGear, myCraftSkills } = registerCrafting(spacetimedb, { requireControllingPlayer, activeDuelFor, inventoryForProgress, restoreItemToProgress, writeProgressAndPresentation });
 export const { upgradeTool, myTools } = registerTools(spacetimedb, { requireControllingPlayer, activeDuelFor });
+export const myGuildJoinRequests = registerGuildJoinRequestView(spacetimedb);
 export const { myGuildHall, upgradeGuildHall, useGuildHallDoor } = registerGuildHall(spacetimedb, { requireGuildPlayer, requireControllingPlayer, playerWithMotion, transitionPlayerMap, persistWorldLocation });
 export const getGuildHub = spacetimedb.procedure({ afterId: t.u64() }, t.string(), (ctx, { afterId }) => ctx.withTx(tx => {
   requireGuildConnection(tx);

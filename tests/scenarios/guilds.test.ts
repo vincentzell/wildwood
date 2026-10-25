@@ -449,6 +449,36 @@ describe("Guild battles and standings", () => {
   });
 });
 
+describe("A President who stops playing", () => {
+  it("hands the guild to the Vice President who still plays, or else the longest-serving member, when a member comes back", () => {
+    const world = scenarioWorld();
+    const [ann, bob, cara, dan] = ["Ann", "Bob", "Cara", "Dan"].map(name => world.join(name));
+    const id = foundGuild(world, ann, "Rose", [bob]);
+    world.advance(HOUR);
+    for (const later of [cara, dan]) later.call("joinGuild", { guildId: id });
+    ann.call("setGuildVicePresident", { identity: dan.identity, enabled: true });
+    const president = () => world.db.guild.id.find(id).leader.toHexString();
+    for (const player of [ann, bob, cara, dan]) player.disconnect();
+    // Six days away is not long enough.
+    world.advance(6 * DAY);
+    enter(cara);
+    expect(president()).toBe(ann.hex);
+    // Past a week: the Vice President has not played either, so the longest-serving member who has leads.
+    cara.disconnect();
+    world.advance(2 * DAY);
+    enter(bob);
+    expect(president()).toBe(bob.hex);
+    // Bob hears it by letter, and so does Ann.
+    const letters = (who: typeof ann) => [...world.db.playerMail.iter()].filter((mail: any) => mail.identity.toHexString() === who.hex).map((mail: any) => mail.title);
+    expect(letters(bob)).toContain("Rose: You Are President");
+    expect(letters(ann)).toContain("Rose: New President");
+    // Ann comes back as a member, and stays one: Bob plays.
+    enter(ann);
+    expect(president()).toBe(bob.hex);
+    expect(world.db.guildMember.identity.find(ann.identity)?.guildId).toBe(id);
+  });
+});
+
 describe("Guild join requests", () => {
   it("a request-only guild takes requests that members see and only officers decide; the answer comes by mail with its note", () => {
     const world = scenarioWorld();

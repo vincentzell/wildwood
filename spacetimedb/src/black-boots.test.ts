@@ -1,6 +1,6 @@
 import { reportEnemy } from "../../tests/helpers/enemy-defeat";
 import { expect, it, vi } from "vitest";
-import { BLACK_BOOTS, BLACK_BOOTS_DROP_DENOMINATOR } from "../../shared/items";
+import { BLACK_BOOTS } from "../../shared/items";
 import { INFERNAL_DEPTHS_MAP_ID, PLAYER_SPEED } from "../../shared/rules";
 import { inventoryFromSave } from "../../src/game/inventory";
 import { crystalFixture, server } from "../../tests/helpers/crystal-hollows-fixture";
@@ -9,7 +9,8 @@ vi.mock("spacetimedb/server", () => import("../../tests/helpers/spacetime-module
 it("no longer drops black boots in Night Forest, and keeps owned ones on the feet on reload", () => {
   const f = crystalFixture(); f.patch("player", { mapId: INFERNAL_DEPTHS_MAP_ID });
   f.patch("playerProgress", { equippedRightHand: "starter_stone", damage: 1e15 });
-  f.ctx.random.integerInRange = vi.fn((_min, max) => max === BLACK_BOOTS_DROP_DENOMINATOR ? 1 : max);
+  // Every roll at its luckiest: still nothing drops.
+  f.ctx.random.integerInRange = vi.fn(() => 1);
   reportEnemy(f);
   expect(JSON.parse(progressOf(f, f.ctx.sender).inventoryJson)).not.toContain(BLACK_BOOTS);
   expect([...f.db.playerItemDrop.iter()]).toEqual([]);

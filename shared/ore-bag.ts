@@ -1,6 +1,7 @@
 import { bagSlotsUsed } from "./equipment-copies";
 import type { MiningNode } from "./mining";
-import { REFINE_ORES, type OreId } from "./refine";
+import { REFINE_ORES, tierGrade, type OreId } from "./refine";
+import { GEAR_GRADES, GEAR_GRADE_NAMES } from "./gear-grades";
 import { ARCANE_CRYSTAL, WOOD_IDS } from "./crafting";
 import { WOOD_TREE_KINDS, WOOD_TREES } from "./woodcutting";
 
@@ -50,11 +51,13 @@ export function bagFullForOres(needed: readonly OreId[]) {
 
 /** The stack's own lines in the item window: what it is for, and where it comes from. */
 export function oreDescription(oreId: OreId) {
-  if (oreId === "starshard") return { use: "Refining from ★11 up takes one a try, with the gear's ore.", from: "Rarely found in Mysterious rocks in the Copper Hills." };
+  if (oreId === "starshard") return { use: "Refining from ★11 up takes one a try, with the gear's ore.", from: "Every Mysterious rock in the Copper Hills holds one; the rocks are rare." };
   if (oreId === ARCANE_CRYSTAL) return { use: "Crafting staffs and Magic armor takes it.", from: "Mined from crystal rocks in the Copper Hills, east of Town." };
   const tree = WOOD_TREE_KINDS.find(kind => WOOD_TREES[kind].log === oreId);
-  if (tree) return { use: "Crafting bows, staffs and Light or Magic armor takes it.", from: `Chopped from ${WOOD_TREES[tree].name}s in Timberwood, north of the Copper Hills.` };
+  if (tree) return { use: "Crafting bows, staffs and Light or Magic armor takes it.", from: `Chopped from ${WOOD_TREES[tree].name}s in Timberwood, west of Town.` };
   const grade = REFINE_ORES[oreId].grade as 1 | 2 | 3 | 4;
-  const tiers = { 1: "1–4", 2: "5–8", 3: "9–12", 4: "13–15" }[grade];
-  return { use: `The Smith refines Tier ${tiers} gear with it, one a try.`, from: "Mined in the Copper Hills, east of Town." };
+  // Four grades to an ore, the last three (refine.ts tierGrade).
+  const graded = GEAR_GRADES.filter((_name, index) => tierGrade(index + 1) === grade);
+  const span = `${GEAR_GRADE_NAMES[graded[0]]} to ${GEAR_GRADE_NAMES[graded[graded.length - 1]]}`;
+  return { use: `The Smith refines ${span} gear with it, one a try.`, from: "Mined in the Copper Hills, east of Town." };
 }

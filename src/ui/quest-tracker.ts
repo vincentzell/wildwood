@@ -111,8 +111,8 @@ export function installQuestTracker(options: {
       count.className = "quest-tracker-count";
       count.textContent = `${item.count}/${item.target}`;
       line.append(label, count);
-      // Bright means this map; a line says where only for the rest, and whose a collected quest was.
-      const whereText = item.onMap ? (item.from ? `For ${item.from}` : "") : item.from ? `${item.where} · For ${item.from}` : item.where;
+      // Bright means this map; a line says where only for the rest.
+      const whereText = item.onMap ? "" : item.where;
       const where = document.createElement("span");
       where.className = "quest-tracker-where";
       where.textContent = whereText;
@@ -123,7 +123,8 @@ export function installQuestTracker(options: {
       const fill = document.createElement("span");
       fill.style.width = `${Math.round(item.share * 100)}%`;
       bar.append(fill);
-      row.append(line, bar, where);
+      // Where first, then the enemy: the map is what a player looks for.
+      row.append(where, line, bar);
       row.setAttribute("aria-label", `${item.enemy}, ${item.count} of ${item.target}, ${item.onMap ? "on this map" : item.where}`);
       return row;
     }));

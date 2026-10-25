@@ -2,17 +2,15 @@ import { createCommunityLinks } from './community-links';
 import { controlsTabUseful, createControlsSettings } from './controls-settings';
 import { onGamepadChange } from './gamepad-controls';
 
-type SettingsSection = { title?: string; selectors: readonly string[] };
+type SettingsSection = { title?: string; expandable?: boolean; description?: string; selectors: readonly string[] };
 
 /** Game's long list is split into headed sections; the other tabs are one section each. */
 const SETTINGS_GROUPS: readonly { id: string; label: string; sections: readonly SettingsSection[] }[] = [
   { id: "game", label: "Game", sections: [
-    { title: "Display", selectors: ["#attackRangeToggle", "#remoteGhostsToggle", "#cameraZoomToggle", "#ownNamePlateToggle", "#guildTagsToggle", "#enemyHpNumbersToggle", "#damageNumbersToggle", "#cardFoundPopupsToggle", "#statPopupsToggle", "#baseStatRewardsToggle", "#scientificNotationToggle", "#statTrackerToggle", "#questTrackerToggle", "#gameTickerToggle"] },
-    { title: "Chat", selectors: ["#chatToggle", "#chatTimestampsToggle"] },
-    { title: "Device", selectors: ["#toolbarHapticsToggle", "#selfProfileTapToggle", "#fullscreenToggle", "#keepScreenOnToggle"] },
-    { title: "Performance", selectors: ["#highResolutionToggle", "#lowPerformanceToggle", "#idleThrottleToggle", "#webglWorldToggle", "#dedicatedGpuToggle", "#fpsToggle", "#dpsToggle", "#latencyToggle"] },
-    { title: "Graphics", selectors: ["#graphicsInfo"] },
-    { title: "Help", selectors: ["#replayTutorialRow"] },
+    { title: "Display & HUD", expandable: true, description: "Combat · Trackers · Timers & hints", selectors: ["#attackRangeToggle", "#enemyHpNumbersToggle", "#damageNumbersToggle", "#statPopupsToggle", "#baseStatRewardsToggle", "#cardFoundPopupsToggle", "#scientificNotationToggle", "#cameraZoomToggle", "#statTrackerToggle", "#questTrackerToggle", "#gameTickerToggle"] },
+    { title: "Players & Social", expandable: true, description: "Players · Names · Chat", selectors: ["#remoteGhostsToggle", "#ownNamePlateToggle", "#guildTagsToggle", "#chatToggle", "#chatTimestampsToggle"] },
+    { title: "Device & Performance", expandable: true, description: "Device · Graphics · Diagnostics", selectors: ["#toolbarHapticsToggle", "#selfProfileTapToggle", "#fullscreenToggle", "#keepScreenOnToggle", "#highResolutionToggle", "#lowPerformanceToggle", "#idleThrottleToggle", "#webglWorldToggle", "#dedicatedGpuToggle", "#fpsToggle", "#dpsToggle", "#latencyToggle", "#graphicsInfo"] },
+    { selectors: ["#replayTutorialRow"] },
   ] },
   { id: "controls", label: "Controls", sections: [{ selectors: ["#controlsSettings"] }] },
   { id: "audio", label: "Audio", sections: [{ selectors: ["#musicVolume", "#sfxVolume"] }] },
@@ -120,6 +118,23 @@ export function installSettingsTabs(doc: Document) {
     for (const section of group.sections) {
       const rows = section.selectors.flatMap(selector => [...settings.querySelectorAll<HTMLElement>(selector)].map(control => control.closest<HTMLElement>(".setting-row") ?? control));
       if (!rows.length) continue;
+      if (section.expandable) {
+        const disclosure = doc.createElement("details");
+        disclosure.className = "settings-disclosure";
+        const summary = doc.createElement("summary");
+        const title = doc.createElement("span");
+        title.textContent = section.title ?? "More settings";
+        const description = doc.createElement("span");
+        description.className = "settings-disclosure-description";
+        description.textContent = section.description ?? "";
+        summary.append(title, doc.createTextNode(" "), description);
+        const content = doc.createElement("div");
+        content.className = "settings-disclosure-content";
+        for (const row of rows) content.append(row);
+        disclosure.append(summary, content);
+        panel.append(disclosure);
+        continue;
+      }
       if (section.title) {
         const heading = doc.createElement("h3");
         heading.className = "settings-section-title";

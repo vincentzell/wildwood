@@ -1106,6 +1106,9 @@ export type MyGold = __Infer<typeof MyGold>;
 export const MyGuildHall = __t.object("MyGuildHall", {});
 export type MyGuildHall = __Infer<typeof MyGuildHall>;
 
+export const MyGuildJoinRequests = __t.object("MyGuildJoinRequests", {});
+export type MyGuildJoinRequests = __Infer<typeof MyGuildJoinRequests>;
+
 export const MyIgnoredDrops = __t.object("MyIgnoredDrops", {});
 export type MyIgnoredDrops = __Infer<typeof MyIgnoredDrops>;
 

@@ -18,8 +18,6 @@ type WindowActionsElements = {
   closeInventoryButton: HTMLElement;
   shopButton: HTMLButtonElement;
   resetProgressButton: HTMLElement;
-  bootUpgrade: HTMLElement;
-  bootUpgradeClose: HTMLElement;
   closeDuelResultButton: HTMLElement;
   closeDuelReplayButton: HTMLElement;
 };
@@ -58,7 +56,6 @@ type GameActionsDependencies = {
   showMessage: (message: string, color: string) => void;
   leaveDuelResult: () => void;
   closeDuelReplay: () => void;
-  closeBootUpgrade: () => void;
   resetServerProgress: () => Promise<{ ok: boolean; error?: string; restartError?: string }>;
   setResetPending: (pending: boolean) => void;
   clearProgressState: () => void;
@@ -140,7 +137,6 @@ export function createGameActionsController(dependencies: GameActionsDependencie
       inventory.selectedItemId = "";
       inventory.selectedItemLocation = "";
       dependencies.renderInventory();
-      elements.bootUpgrade.hidden = true;
       dependencies.clearPlayerInput();
       await dependencies.resetGame();
       if (result.restartError) throw new Error(result.restartError);
@@ -220,10 +216,6 @@ export function createGameActionsController(dependencies: GameActionsDependencie
 
   elements.closeDuelResultButton.addEventListener("click", dependencies.leaveDuelResult);
   elements.closeDuelReplayButton.addEventListener("click", dependencies.closeDuelReplay);
-  elements.bootUpgradeClose.addEventListener("click", () => {
-    dependencies.closeBootUpgrade();
-    dependencies.refreshFrameClock();
-  });
   elements.resetProgressButton.addEventListener("click", () => { void resetProgress(); });
 
   return { handleInputEscape };

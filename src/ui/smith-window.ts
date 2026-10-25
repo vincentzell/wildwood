@@ -234,7 +234,7 @@ export function createSmithController(deps: {
     oreLine.textContent = REFINE_ORE_ORDER.map(oreId => `${REFINE_ORES[oreId].name} ${held[oreId] ?? 0}`).join(" · ");
     // Where the ore and wood come from: every player holds a pickaxe and a hatchet.
     miningText.textContent = `Mining ${deps.mining?.() ?? 0} · Ore is in the Copper Hills, east of Town`;
-    woodcuttingText.textContent = `Woodcutting ${deps.woodcutting?.() ?? 0} · Wood is in Timberwood, north of the Copper Hills`;
+    woodcuttingText.textContent = `Woodcutting ${deps.woodcutting?.() ?? 0} · Wood is in Timberwood, west of Town`;
     if (view === "refine") {
       renderFocus(chosen);
       renderStationGrid(viewPart("refine", ".station-grid"), refineTiles, selected, pick => { selected = pick; lastResult = null; render(); });

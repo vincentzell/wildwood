@@ -18,7 +18,7 @@ const SCROLL_PIXELS_PER_SECOND = 900;
  * forces a layout, which every frame cost controller players a steady slice of each frame.
  */
 const TOP_WINDOW_RECHECK_MS = 150;
-const FOCUSABLE = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1']), [role='tab']";
+const FOCUSABLE = "button, summary, [href], input, select, textarea, [tabindex]:not([tabindex='-1']), [role='tab']";
 
 type Pad = { buttons: readonly { pressed: boolean; value?: number }[]; axes: readonly number[]; id: string; mapping?: string; connected?: boolean };
 type Direction = "up" | "down" | "left" | "right";

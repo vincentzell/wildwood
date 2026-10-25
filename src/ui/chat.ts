@@ -1,4 +1,5 @@
 import { createChatGuildRequests } from "./chat-guild-requests";
+import { createGuildRequestDot } from "./guild-request-dot";
 import { markChatAnnouncement } from "./chat-announcement-line";
 import type { ChatAnnouncementKind } from "../../shared/chat-announcement";
 import { CHAT_CLOSED_EVENT } from "./town-teleport-button";
@@ -70,6 +71,8 @@ type ChatMessage = {
 
 type CoopClient = {
   guild?: GuildApi;
+  /** Join requests waiting on the guild, for its President and Vice President. */
+  guildJoinRequests?: () => number;
   loadChatMessageReactions?: (channel: string, id: bigint) => Promise<ChatReactionState>;
   loadChatRole?: () => Promise<ChatRole>;
   restoreChatMessage?: (channel: string, id: bigint) => Promise<void>;
@@ -238,6 +241,13 @@ export function createChatController({ elements, getCoop, showMessage, onOpenRep
   const guildRequests = createChatGuildRequests({ document: elements.panel.ownerDocument, api: () => getCoop()?.guild,
     openPlayer: onOpenPlayer, changed: () => { messageActions.close(false); renderedRevision = ""; refresh(); },
   });
+  const requestDot = createGuildRequestDot([
+    { find: () => document.getElementById("guildBtn"), className: "inventory-notice" },
+    { find: () => document.getElementById("chatSizeToggle"), className: "guild-request-dot" },
+    { find: () => channelPicker.buttonFor("guild"), className: "guild-request-dot" },
+    { find: () => guildRequests.requestsTab, className: "guild-request-dot" },
+  ]);
+  let requestsWaiting = 0;
 
   function conversationKey() { return `${channel}:${channel === "private" ? privatePeerIdentity || privatePeer.toLowerCase() : channel === "guild" ? guildContext : ""}`; }
   function currentMessages() {
@@ -506,6 +516,9 @@ export function createChatController({ elements, getCoop, showMessage, onOpenRep
     if (pendingReply && coop?.isPlayerBlocked?.(pendingReply.sender)) setPendingReply(null);
 
     guildRequests.refresh(identity, guildContext, enabled && large && channel === "guild");
+    const waiting = coop?.guildJoinRequests?.() ?? 0;
+    requestDot.render(waiting);
+    if (waiting !== requestsWaiting) { requestsWaiting = waiting; if (guildRequests.isSelected()) guildRequests.reload(); }
     elements.panel.classList.toggle("is-guild-requests", guildRequests.isSelected());
     elements.panel.classList.toggle("is-private-inbox", channel === "private" && !privatePeer);
     const now = Date.now();

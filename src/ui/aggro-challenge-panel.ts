@@ -106,11 +106,11 @@ export function createAggroChallengePanel(d: {
       chip.disabled = pending;
     }
     const lines = done ? [] : current.active
-      ? ["No prestige bonuses this run: stat gain, perks and challenge rewards are off. Autofarm's Pull is off too.",
+      ? ["No prestige bonuses this run: stat gain, perks and challenge rewards are off, except the attack speed cap from Reflect Only wins and Quick Draw. Autofarm's Pull is off too.",
         "Drop out any time: this run is kept, and your main run comes back. Only dying after Tutorial Forest starts it over.", "Reach the goal, then press Prestige to win."]
       : parked ? ["Your Aggro run is kept where you left it.", "Dropping back in saves your main run and picks the run up again."]
       : ["Starting saves your run and puts you back in the forest with starting stats.",
-        "No prestige bonuses: stat gain, perks and challenge rewards are off, and so is Autofarm's Pull. Research and gear stay.",
+        "No prestige bonuses: stat gain, perks and challenge rewards are off, and so is Autofarm's Pull. The attack speed cap from Reflect Only wins and Quick Draw stays, as do research and gear.",
         "Reach the goal, then press Prestige to win and get your run back."];
     terms.replaceChildren(...lines.map(line => Object.assign(root.createElement("li"), { textContent: line })));
     goal.hidden = reward.hidden = done;

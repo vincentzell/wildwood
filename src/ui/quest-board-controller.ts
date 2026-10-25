@@ -63,7 +63,7 @@ export function questBoardView(state: QuestState | null, nowMs: number, mapName:
   const quests = activeQuestIndices(all).map(index => all[index]).map(quest => ({
     title: `Defeat ${quest.target} ${quest.enemy}`,
     // A collected quest names the member it was taken from; a taken one, who took it.
-    where: quest.from ? `${mapName(quest.mapId)} · For ${quest.from}` : quest.takenBy ? `Taken by ${quest.takenBy}` : mapName(quest.mapId),
+    where: quest.takenBy ? `Taken by ${quest.takenBy}` : mapName(quest.mapId),
     progress: `${Math.min(quest.progress, quest.target)}/${quest.target}`,
     share: quest.target > 0 ? Math.min(1, quest.progress / quest.target) : 0,
     done: quest.progress >= quest.target,
@@ -165,7 +165,7 @@ export function createQuestBoardController(deps: {
       row.className = "quest-row"; row.setAttribute("role", "listitem");
       row.classList.toggle("is-done", quest.done);
       row.classList.toggle("is-taken", quest.taken);
-      row.innerHTML = `<span class="quest-check" aria-hidden="true">✓</span><span class="quest-copy"><strong></strong><span class="quest-where"></span>`
+      row.innerHTML = `<span class="quest-check" aria-hidden="true">✓</span><span class="quest-copy"><span class="quest-where"></span><strong></strong>`
         + `<span class="quest-bar" aria-hidden="true"><span></span></span></span><span class="quest-count"></span>`;
       row.querySelector("strong")!.textContent = quest.title;
       row.querySelector(".quest-where")!.textContent = quest.where;

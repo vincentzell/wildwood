@@ -32,15 +32,15 @@ export type WeeklyQuest = {
 };
 
 /**
- * Any member may collect this many of other members' unfinished quests a
- * week, once their own fifteen are done, so a member who misses the week does
- * not cost the guild its points.
+ * Once their own fifteen are done, a member may hold this many quests from the
+ * guild's pool at a time, and collect more as they finish them, until the pool
+ * is used up. A small guild can reach the whole week's points.
  */
 export const GUILD_QUEST_COLLECT_LIMIT = 15;
 /**
  * The most a guild earns in a week, whatever its size: a full guild's fifteen
  * each (GUILD_MEMBER_LIMIT 20 x 15 = 300, +30%). A smaller guild reaches it by
- * collecting extra quests once members' own are done.
+ * collecting from the pool, fifteen at a time, once members' own are done.
  */
 export const GUILD_WEEK_QUEST_CAP = 20 * WEEKLY_QUEST_COUNT;
 

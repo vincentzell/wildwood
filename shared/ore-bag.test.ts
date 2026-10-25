@@ -45,10 +45,10 @@ describe("ores in the bag", () => {
   });
 
   it("each say what they refine and where they come from", () => {
-    expect(oreDescription("copper_ore").use).toBe("The Smith refines Tier 1–4 gear with it, one a try.");
-    expect(oreDescription("adamant_ore").use).toBe("The Smith refines Tier 13–15 gear with it, one a try.");
-    expect(oreDescription("starshard").from).toContain("Mysterious rocks");
-    expect(oreDescription("oak_log").from).toBe("Chopped from Oak Trees in Timberwood, north of the Copper Hills.");
+    expect(oreDescription("copper_ore").use).toBe("The Smith refines Crude to Fine gear with it, one a try.");
+    expect(oreDescription("adamant_ore").use).toBe("The Smith refines Celestial to Eternal gear with it, one a try.");
+    expect(oreDescription("starshard").from).toContain("Mysterious rock");
+    expect(oreDescription("oak_log").from).toBe("Chopped from Oak Trees in Timberwood, west of Town.");
     expect(oreDescription("arcane_crystal").from).toContain("crystal rocks");
     expect(bagFullForOres(["pine_log"])).toBe("Your bag is full. Free a slot for Pine Log.");
   });

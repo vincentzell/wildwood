@@ -8,6 +8,7 @@ import { HOME_EXTERIOR_MAP_ID } from "../../shared/home";
 import { questDay, questWeek } from "../../shared/weekly-quests";
 import { isTownMap, TOWN_ARRIVAL, TOWN_MAP_ID } from "../../shared/town";
 import { doorDestinationFor } from "./door-reach";
+import { passLeadershipIfAway } from "./guild-succession";
 
 /**
  * Guild halls on the server (shared/guild-hall.ts has the rules).
@@ -65,9 +66,12 @@ type GuildHallDeps = {
 };
 
 /** A member coming into the world: their guild's hall gets its row (fund seeded) if it has none, so my_guild_hall reads it. */
+/** A member entering the world: their guild's hall row, and a President away too long handing over (guild-succession.ts). */
 export function memberEnteredWorld(ctx: any) {
   const guildId = guildOf(ctx, ctx.sender);
-  if (guildId !== null) ensureGuildHall(ctx, guildId);
+  if (guildId === null) return;
+  ensureGuildHall(ctx, guildId);
+  passLeadershipIfAway(ctx, ctx.sender);
 }
 
 export function registerGuildHall(spacetimedb: typeof spacetimedbType, deps: GuildHallDeps) {

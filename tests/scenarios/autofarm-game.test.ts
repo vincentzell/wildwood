@@ -124,7 +124,9 @@ describe("The stat tracker (FARM-12)", () => {
       box.dispatchEvent(new (tab.window as any).Event("change", { bubbles: true }));
     }
     expect(statTracker(tab)!.rows.kills).toBeUndefined();
+    // A tap folds it once the double-tap window (which locks it) has passed.
     tapSelector(tab, ".stat-tracker-handle");
+    await tab.play(400);
     const folded = () => tab.document.querySelector<HTMLElement>(".stat-tracker:not(.stat-tracker-settings) table")!.hidden;
     expect(folded()).toBe(true);
 
@@ -137,6 +139,7 @@ describe("The stat tracker (FARM-12)", () => {
     expect(folded()).toBe(true);
     expect(setting(".stat-tracker-prestige-reset input").checked).toBe(false);
     tapSelector(tab, ".stat-tracker-handle");
+    await tab.play(400);
     const reloaded = statTracker(tab)!;
     expect(reloaded.seconds).toBeGreaterThanOrEqual(farmed.seconds);
     expect(reloaded.rows.power.gain).toBeGreaterThan(0);

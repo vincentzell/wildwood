@@ -45,7 +45,7 @@ export function createPrestigeChallengePanel(d: {
     <p class="prestige-challenge-rule">Your attacks deal no damage. Only hits you throw back with the Reflect perk hurt enemies and bosses.</p>
     <ul class="prestige-challenge-terms"></ul>
     <div class="prestige-challenge-goal"><span>Goal</span><strong></strong><small></small></div>
-    <div class="prestige-challenge-reward"><span>Reward</span><strong>${bonus(1)} attacks/sec · +${REFLECT_RANKS_PER_CHALLENGE} Reflect Rank Cap</strong><small>to base attack speed and its cap, and to Reflect's rank cap, for good</small></div>
+    <div class="prestige-challenge-reward"><span>Reward</span><strong>${bonus(1)} attacks/sec · +${REFLECT_RANKS_PER_CHALLENGE} Reflect Rank Cap</strong><small>your attack speed and its cap both rise, and Reflect's rank cap, for good</small></div>
     <p class="prestige-challenge-earned"></p>
     <button type="button" class="prestige-challenge-action"></button>
     <p class="prestige-challenge-status" role="status"></p>`;

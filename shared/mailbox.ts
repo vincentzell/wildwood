@@ -38,7 +38,7 @@ export const GEAR_OVERHAUL_MAIL_TITLE = "New Gear, Fresh Start";
 export const GEAR_OVERHAUL_MAIL_BODY = [
   "Gear now comes in 15 grades that last, from Crude to Eternal. Your old gear was melted down into gold.",
   "",
-  "Visit the Smith in Town to buy new gear, or try Upgrade All. Your weapon school's Mastery opens higher grades as you fight, and the Archery Range, Sword Hall and Mage Tower show your progress.",
+  "Buy new gear from the Weapon and Armor Sellers in Town, or craft it at the Smith. Your weapon school's Mastery opens higher grades as you fight, and the Archery Range, Sword Hall and Mage Tower show your progress.",
   "",
   "Here are 150 gems to say thanks for playing.",
 ].join("\n");

@@ -303,13 +303,13 @@ export function memberQuestStanding(ctx: Ctx, identity: any, guildId: bigint) {
   };
 }
 
-/** Whether a member may collect this week, and how many more: their own fifteen must all be done first. */
+/** Whether a member may collect, and how many more: their own fifteen done first, then up to fifteen unfinished at a time. */
 export function questCollectStanding(ctx: Ctx, identity: any) {
   const quests = weeksQuests(ctx, identity);
   const seat = ctx.db.guildMember.identity.find(identity);
   const pool = seat ? guildQuestPool(ctx, seat.guildId) : { size: 0, left: 0 };
   return { ready: Boolean(quests?.length) && !quests!.filter(ownQuest).some(questOpen),
-    left: Math.max(0, GUILD_QUEST_COLLECT_LIMIT - (quests ?? []).filter(quest => quest.from).length),
+    left: Math.max(0, GUILD_QUEST_COLLECT_LIMIT - (quests ?? []).filter(quest => quest.from && !questDone(quest)).length),
     pool: pool.left, poolSize: pool.size };
 }
 
@@ -329,8 +329,8 @@ export function guildQuestPool(ctx: Ctx, guildId: bigint) {
 
 /**
  * A member whose own fifteen are done draws extra quests from the guild's
- * pool, fresh from the maps they can reach, up to fifteen a week (thirty in
- * all). Nothing is taken from anyone and nothing is held: the pool is the
+ * pool, fresh from the maps they can reach, up to fifteen unfinished at a time
+ * and as many as the pool holds. Nothing is taken from anyone and nothing is held: the pool is the
  * guild's whole week, so a member who misses theirs leaves room for the rest
  * to make it up.
  */
@@ -342,7 +342,7 @@ export function collectGuildQuests(ctx: Ctx, collector: any) {
   const mine = ensureDailyQuests(ctx, collector);
   const standing = questCollectStanding(ctx, collector);
   if (!standing.ready) fail("Finish your own quests first.");
-  if (!standing.left) fail(`You have collected ${GUILD_QUEST_COLLECT_LIMIT} quests this week.`);
+  if (!standing.left) fail(`Finish some of your ${GUILD_QUEST_COLLECT_LIMIT} collected quests first.`);
   const pool = guildQuestPool(ctx, seat.guildId);
   const count = Math.min(standing.left, pool.left);
   if (!count) fail(`Your guild has finished its ${GUILD_WEEK_QUEST_CAP} quests this week.`);
