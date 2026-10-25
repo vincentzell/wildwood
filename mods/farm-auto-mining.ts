@@ -7,6 +7,7 @@ import { getPlayerCoords } from "./lib/player-coords";
 
 const STORAGE_KEY = "wildwood-mod-auto-mining-enabled";
 const LIST_KEY = "wildwood-mod-auto-mining-list";
+const STORAGE_KEY_MYST = "wildwood-mod-auto-mining-mysterious";
 const LOG_LIMIT = 80;
 
 const ORE_ORDER = ["copper_ore", "iron_ore", "mithril_ore", "adamant_ore"] as const;
@@ -85,6 +86,7 @@ function saveList(): void {
   catch { /* idem */ }
 }
 
+let autoMiningMyst = localStorage.getItem(STORAGE_KEY_MYST) === "true";
 let autoMiningRunning = false;
 let autoMiningAbort = false;
 let autoMiningLogs: LogEntry[] = [];
@@ -366,6 +368,36 @@ async function stopNativeAutoFarm(): Promise<void> {
   }
 }
 
+
+function getMysteriousReadyCount(): number {
+  const el = document.querySelector('.mysterious-ore-timer-handle');
+  if (!el || !el.textContent) return 0;
+  const match = el.textContent.match(/Mysterious: (\d+)\/\d+/);
+  if (match) return parseInt(match[1], 10);
+  return 0;
+}
+
+async function mineMysterious() {
+  logAutoMining("💎 Tour des Mysterious Ores...", "ok");
+  await stopNativeAutoFarm();
+  
+  const spots = [
+    { name: "Copper", x: 10043, y: 6487 },
+    { name: "Iron", x: 10785, y: 6443 },
+    { name: "Mithril", x: 11864, y: 6488 },
+    { name: "Adamant", x: 12987, y: 6359 }
+  ];
+
+  for (const spot of spots) {
+    if (autoMiningAbort) return;
+    logAutoMining(`💎 → Mysterious ${spot.name} (${spot.x}, ${spot.y})`);
+    await marcherVers(spot.x, spot.y, 20000, "town");
+    // Attendre que le rocher soit miné (12 secondes de base, 15s de sécurité)
+    await new Promise(r => setTimeout(r, 15000)); 
+  }
+  logAutoMining("💎 Tour terminé, reprise du minage normal.");
+}
+
 async function autoMiningRoutine(): Promise<void> {
   if (autoMiningRunning) return;
   if (autoMiningList.length === 0) { logAutoMining("⚠️ Aucun minerai coché", "warn"); return; }
@@ -396,6 +428,7 @@ async function autoMiningRoutine(): Promise<void> {
     let lastProgressTs = Date.now();
     let lastProgressReason = "start";
     let lastMining = getMiningLevel();
+    let lastMystCheck = 0;
     const nextLockedThreshold = (): number | null => {
       let min = Infinity;
       for (const k of result.fallbackFor.keys()) {
@@ -415,6 +448,17 @@ async function autoMiningRoutine(): Promise<void> {
         logAutoMining("⏹️ Stall 20min (dernier : " + lastProgressReason + ")", "warn"); break;
       }
       await new Promise(r => setTimeout(r, 3000));
+
+      if (autoMiningMyst && Date.now() - lastMystCheck > 60000) {
+        lastMystCheck = Date.now();
+        const ready = getMysteriousReadyCount();
+        if (ready > 0) {
+          await mineMysterious();
+          const re = await activateMining([...autoMiningList]);
+          if (re.ok) { result = re; lastProgressTs = Date.now(); lastProgressReason = "myst run"; }
+          else logAutoMining("⚠️ Échec réactivation post-myst: " + re.reason, "warn");
+        }
+      }
 
       const lvl = getMiningLevel();
       if (lvl !== null && lvl !== lastMining) {
@@ -511,6 +555,18 @@ function renderStatus(): HTMLElement {
     row.append(cb, name, badge);
     list.append(row);
   }
+
+  const lblMyst = document.createElement("label");
+  lblMyst.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px;margin-top:4px;background:rgba(255,255,255,.05);border-radius:4px;";
+  const cbMyst = document.createElement("input");
+  cbMyst.type = "checkbox";
+  cbMyst.checked = autoMiningMyst;
+  cbMyst.addEventListener("change", () => {
+    autoMiningMyst = cbMyst.checked;
+    try { localStorage.setItem(STORAGE_KEY_MYST, String(autoMiningMyst)); } catch {}
+  });
+  lblMyst.append(cbMyst, document.createTextNode("💎 Farm Mysterious Ores (Starshard)"));
+  list.append(lblMyst);
   wrap.append(list);
 
   const actions = document.createElement("div");
