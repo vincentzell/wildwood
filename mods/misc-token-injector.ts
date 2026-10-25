@@ -206,14 +206,39 @@ function renderStatus(): HTMLElement {
   row.append(btnExport, btnInject);
   wrap.append(row);
 
+  // Bouton "Continue as Guest" — uniquement visible hors jeu (page de login)
+  const onLoginPage = !document.getElementById("hud");
+  if (onLoginPage) {
+    const btnGuest = document.createElement("button");
+    btnGuest.textContent = "🎮 Jouer en invité";
+    btnGuest.style.cssText =
+      "width:100%;margin-top:6px;padding:6px;background:rgba(255,215,90,.22);" +
+      "color:inherit;border:0;border-radius:3px;cursor:pointer;" +
+      "font-size:11px;font-weight:900;";
+    btnGuest.addEventListener("click", () => {
+      const coop = (window as unknown as { wildstatCoop?: { continueAsGuest?: () => void } }).wildstatCoop;
+      if (typeof coop?.continueAsGuest === "function") {
+        coop.continueAsGuest();
+      } else {
+        const native = document.querySelector<HTMLButtonElement>(
+          "#continueAsGuestBtn, [data-action='continueAsGuest']"
+        );
+        if (native) native.click();
+        else alert("wildstatCoop.continueAsGuest indisponible");
+      }
+    });
+    wrap.append(btnGuest);
+  }
+
   return wrap;
 }
 
 export function registerTokenInjectorMod(): void {
   REGISTERED_MODS.push({
-    id: "misc-token-injector",
+        id: "misc-token-injector",
     name: "Token Injector",
     category: "MISC",
+    loginCompatible: true,
     switch: {
       label: "On",
       get: isEnabled,

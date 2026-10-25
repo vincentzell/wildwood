@@ -13,6 +13,8 @@ export type Mod = {
   name: string;
   category: ModCategory;
   description?: string;
+  /** Afficher ce mod sur la page de login (avant le démarrage du jeu). */
+  loginCompatible?: boolean;
   /** Optionnel : un switch affiché sur la carte, persisté par le mod lui-même. */
   switch?: {
     label: string;

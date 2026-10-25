@@ -1,5 +1,5 @@
 // mods/index.ts
-import { installModMenu } from "./modmenu";
+import { installModMenu, installLoginOverlay } from "./modmenu";
 import { registerFarmAutoDodgeMod } from "./farm-auto-kiting";
 import { registerAutoRetreatRegenMod } from "./farm-auto-retreat-regen";
 import { registerAutoPrestigeMod } from "./farm-auto-prestige";
@@ -33,4 +33,5 @@ export function installAllMods(): void {
   registerTradeMarketMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
   installModMenu();
+  installLoginOverlay();
 }

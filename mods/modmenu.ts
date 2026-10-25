@@ -10,6 +10,7 @@ const ACTIVE_TAB_KEY = "wildwood-mod-modmenu-tab";
 const CATEGORIES: readonly ModCategory[] = ["FARM", "QUEST", "CARD", "MISC", "TRADE"];
 
 const PLAYER_HUD_SELECTOR = ".player-hud-card";
+const LOGIN_OVERLAY_ID = "mod-login-overlay";
 
 function playerHudWidth(): number | null {
   const el = document.querySelector(PLAYER_HUD_SELECTOR);
@@ -34,7 +35,7 @@ export function installModMenu(): void {
 
   const hud = document.getElementById("hud");
   if (!hud) {
-    console.warn("[modmenu] #hud introuvable, menu non installé");
+    retryWhenHudReady();
     return;
   }
 
@@ -317,4 +318,114 @@ export function installModMenu(): void {
     }
   }, 1_500);
   render();
+}
+let hudRetryObserver: MutationObserver | null = null;
+
+function retryWhenHudReady(): void {
+  if (hudRetryObserver) return;
+  hudRetryObserver = new MutationObserver(() => {
+    if (document.getElementById("hud")) {
+      hudRetryObserver?.disconnect();
+      hudRetryObserver = null;
+      installModMenu();
+    }
+  });
+  hudRetryObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+/** Overlay visible uniquement sur la page de login, avant le démarrage du jeu. */
+export function installLoginOverlay(): void {
+  try {
+    if (document.getElementById(LOGIN_OVERLAY_ID)) return;
+    const loginMods = REGISTERED_MODS.filter((m) => m.loginCompatible);
+    if (loginMods.length === 0) return;
+
+    const wrap = document.createElement("div");
+    wrap.id = LOGIN_OVERLAY_ID;
+    wrap.style.cssText = `
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9999998;
+      width: 340px;
+      max-width: calc(100vw - 32px);
+      background: rgba(20,20,20,.95);
+      color: #f5f5e9;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 8px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.65);
+      font: 12px/1.4 Arial, sans-serif;
+      overflow: hidden;
+    `;
+
+    const header = document.createElement("header");
+    header.style.cssText =
+      "display:flex;justify-content:space-between;align-items:center;" +
+      "padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.1);" +
+      "font-weight:900;cursor:pointer;user-select:none;";
+    const headerTitle = document.createElement("span");
+    headerTitle.textContent = "🔐 Login";
+    const headerCaret = document.createElement("span");
+    headerCaret.style.cssText = "opacity:.6;font-size:11px;";
+    headerCaret.textContent = "▾";
+    header.append(headerTitle, headerCaret);
+
+    const body = document.createElement("div");
+    body.style.cssText = "padding:8px;max-height:60vh;overflow-y:auto;";
+
+    for (const mod of loginMods) {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid rgba(255,255,255,.12);border-radius:4px;" +
+        "margin-bottom:6px;overflow:hidden;";
+
+      const cardTitle = document.createElement("div");
+      cardTitle.textContent = mod.name;
+      cardTitle.style.cssText =
+        "font-weight:600;font-size:11px;padding:4px 8px;" +
+        "background:rgba(255,255,255,.05);";
+      card.append(cardTitle);
+
+      if (mod.status) {
+        const content = document.createElement("div");
+        content.style.cssText = "padding:4px 8px;";
+        content.append(mod.status.render());
+        card.append(content);
+
+        const interval = mod.status.intervalMs ?? 1500;
+        const refreshTimer = window.setInterval(() => {
+          if (!document.getElementById(LOGIN_OVERLAY_ID)) {
+            window.clearInterval(refreshTimer);
+            return;
+          }
+          content.replaceChildren(mod.status!.render());
+        }, interval);
+      }
+
+      body.append(card);
+    }
+
+    let collapsed = false;
+    header.addEventListener("click", () => {
+      collapsed = !collapsed;
+      body.hidden = collapsed;
+      headerCaret.textContent = collapsed ? "▸" : "▾";
+    });
+
+    wrap.append(header, body);
+    document.body.append(wrap);
+
+    // Auto-remove quand le jeu démarre (#hud apparaît ou connexion établie)
+    const removalTimer = window.setInterval(() => {
+      const hud = document.getElementById("hud");
+      const coop = (window as unknown as { wildstatCoop?: { isConnected?: () => boolean } }).wildstatCoop;
+      const connected = coop?.isConnected?.() === true;
+      if (hud || connected) {
+        wrap.remove();
+        window.clearInterval(removalTimer);
+      }
+    }, 500);
+  } catch (e) {
+    console.warn("[modmenu] login overlay failed:", e);
+  }
 }
