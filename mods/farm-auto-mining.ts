@@ -164,53 +164,39 @@ async function marcherVers(
   timeoutMs: number,
   mapIdDepart: string
 ): Promise<boolean> {
-  const c = getCoop();
-  if (!c) return false;
   const debut = Date.now();
-  let bestDist = Infinity;
-  let lastPosKey = "";
-  let stuckCount = 0;
+  logAutoMining("🚶 → (" + Math.round(targetX) + ", " + Math.round(targetY) + ")");
 
   while (Date.now() - debut < timeoutMs && !autoMiningAbort) {
     const st = getPlayerCoords();
-    if (!st) { await new Promise(r => setTimeout(r, 100)); continue; }
+    if (!st) { await new Promise(r => setTimeout(r, 50)); continue; }
 
-    if (st.mapId && st.mapId !== mapIdDepart) {
+    if (st.mapId !== mapIdDepart) {
       releaseAllKeys();
       logAutoMining("✅ Map changée → " + st.mapId);
       return true;
     }
 
-    const x = st.x ?? 0, y = st.y ?? 0;
-    const dx = targetX - x, dy = targetY - y;
+    const dx = targetX - st.x;
+    const dy = targetY - st.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < bestDist) bestDist = dist;
 
-    if (dist < 80) {
+    // Tolérance de 25px : si on est dans un rayon de 25px du waypoint, 
+    // le segment est validé (pas besoin d'être au pixel près).
+    if (dist < 25) {
       releaseAllKeys();
-      logAutoMining("✅ Arrivé (dist=" + Math.round(dist) + ")");
       return true;
     }
 
-    const posKey = Math.round(x) + "," + Math.round(y);
-    if (posKey === lastPosKey) stuckCount++; else { stuckCount = 0; lastPosKey = posKey; }
-
-    let keys: string[];
-    if (stuckCount > 12) {
-      if (Math.abs(dx) > Math.abs(dy)) {
-        keys = [dx > 0 ? "ArrowLeft" : "ArrowRight"];
-      } else {
-        keys = [dy > 0 ? "ArrowUp" : "ArrowDown"];
-      }
-      stuckCount = 0;
-    } else {
-      keys = directionToKeys(Math.atan2(dy, dx));
-    }
+    // On pousse dans la direction de la cible, sans anti-stuck
+    const keys = directionToKeys(Math.atan2(dy, dx));
     setKeys(keys);
-    await new Promise(r => setTimeout(r, 100));
+    
+    // 50ms de réactivité au lieu de 100ms
+    await new Promise(r => setTimeout(r, 50));
   }
   releaseAllKeys();
-  logAutoMining("⏱️ Timeout marche (best=" + Math.round(bestDist) + "px)", "warn");
+  logAutoMining("⏱️ Segment non atteint (timeout)", "warn");
   return false;
 }
 

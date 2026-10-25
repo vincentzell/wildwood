@@ -38,7 +38,7 @@ function renderStatus(): HTMLElement {
   const pos = getPlayerCoords();
   const liveEl = document.createElement("div");
   liveEl.style.cssText = "font-weight:900;color:#74d8ff;font-size:12px;text-align:center;background:rgba(0,0,0,.3);padding:6px;border-radius:4px;";
-  liveEl.textContent = pos ? `📍 (${pos.x}, ${pos.y}) [${pos.mapId}]` : "📍 (recherche...)";
+  liveEl.textContent = pos ? `📍 (${Math.round(pos.x)}, ${Math.round(pos.y)}) [${pos.mapId}]` : "📍 (recherche...)";
   wrap.append(liveEl);
 
   const actions = document.createElement("div");
@@ -50,7 +50,7 @@ function renderStatus(): HTMLElement {
   btnRecord.onclick = () => {
     const p = getPlayerCoords();
     if (!p) return;
-    recordedWaypoints.push(p);
+    recordedWaypoints.push({ x: Math.round(p.x), y: Math.round(p.y), mapId: p.mapId });
     saveWaypoints();
     renderList();
   };

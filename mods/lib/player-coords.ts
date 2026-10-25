@@ -20,8 +20,8 @@ export function getPlayerCoords(): PlayerPos | null {
     const s = c?.localState?.();
     if (!s || s.x === undefined || s.y === undefined) return null;
     return {
-      x: Math.round(s.x),
-      y: Math.round(s.y),
+      x: s.x,
+      y: s.y,
       mapId: s.mapId ?? "unknown",
     };
   } catch {
