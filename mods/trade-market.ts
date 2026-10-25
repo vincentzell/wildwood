@@ -24,27 +24,14 @@ type CoopLike = {
 
 
 /* [PATCH:exchange-db-mercy] */
-const REFRESH_KEY = "wildwood-mod-exchange-refresh";
-let refreshIntervalMs = parseInt(localStorage.getItem(REFRESH_KEY) || "10000", 10);
-let _exchangeTimer: any = null;
-
 function _updateExchangeSubscription(isModEnabled: boolean) {
   const c = (window as any).wildstatCoop || (window as any).wildwoodCoop;
   if (!c || typeof c.followExchange !== 'function') return;
   
   if (isModEnabled) {
     try { c.followExchange(true); } catch (e) {}
-    if (_exchangeTimer) clearInterval(_exchangeTimer);
-    // Le refresh tourne en boucle selon l'intervalle choisi
-    _exchangeTimer = setInterval(() => {
-      // On ne rafraîchit que si le mod est toujours ON
-      if (localStorage.getItem("wildwood-mod-exchange-enabled") === "true") {
-        if (typeof refresh === 'function') refresh();
-      }
-    }, refreshIntervalMs);
   } else {
     try { c.followExchange(false); } catch (e) {}
-    if (_exchangeTimer) { clearInterval(_exchangeTimer); _exchangeTimer = null; }
   }
 }
 
@@ -264,7 +251,7 @@ export function registerTradeMarketMod(): void {
       intervalMs: INTERVAL_MS,
     },
     install: () => {
-    if (isEnabled()) _updateExchangeSubscription(true);
+    _updateExchangeSubscription(localStorage.getItem('wildwood-mod-exchange-enabled') === 'true');
       if (isForceSubscribe()) {
         const coop = getCoop();
         try { coop?.followExchange?.(true); } catch { /* idem */ }
