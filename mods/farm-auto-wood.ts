@@ -136,8 +136,7 @@ async function walkToGrove(): Promise<boolean> {
   if (isInGrove()) return true;
   logAutoWood("🚶 Chemin validé (5 captures manuelles)");
 
-  const c = getCoop();
-  const pos = () => getPlayerCoords();
+    const pos = () => getPlayerCoords();
 
   // ── Phase 1 : ArrowLeft à y≈5110 jusqu'à x < 4400 ─────────────
   // Capture #2 : (4382, 5110) atteint. v5 chunk 9 : (4415, 5110).
