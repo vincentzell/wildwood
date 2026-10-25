@@ -1,5 +1,5 @@
 // mods/registry.ts
-export type ModCategory = "FARM" | "QUEST" | "CARD" | "MISC";
+export type ModCategory = "FARM" | "QUEST" | "CARD" | "MISC" | "TRADE";
 
 export type ModStatus = {
   /** Rendu d'un bloc HTML affiché sous le switch. Appelé ~1.5s. */

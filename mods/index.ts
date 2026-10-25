@@ -14,6 +14,7 @@ import { registerAutoUpgradeMod } from "./misc-auto-upgrade";
 import { registerOpenDevMod } from "./misc-open-dev";
 import { REGISTERED_MODS } from "./registry";
 import { registerTokenInjectorMod } from "./misc-token-injector";
+import { registerTradeMarketMod } from "./trade-market";
 
 export function installAllMods(): void {
   registerFarmAutoDodgeMod();
@@ -29,6 +30,7 @@ export function installAllMods(): void {
   registerAutoUpgradeMod();
   registerOpenDevMod();
    registerTokenInjectorMod();
+  registerTradeMarketMod();
   for (const mod of REGISTERED_MODS) mod.install?.();
   installModMenu();
 }

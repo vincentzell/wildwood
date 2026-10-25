@@ -7,7 +7,7 @@ const POSITION_KEY = "wildwood-mod-modmenu-position";
 const COLLAPSED_KEY = "wildwood-mod-modmenu-collapsed";
 const ACTIVE_TAB_KEY = "wildwood-mod-modmenu-tab";
 
-const CATEGORIES: readonly ModCategory[] = ["FARM", "QUEST", "CARD", "MISC"];
+const CATEGORIES: readonly ModCategory[] = ["FARM", "QUEST", "CARD", "MISC", "TRADE"];
 
 const PLAYER_HUD_SELECTOR = ".player-hud-card";
 
