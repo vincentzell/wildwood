@@ -98,7 +98,7 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   if (!allDone) return;
   const notTaken = perso.every(quest => !quest.takenBy || quest.progress >= quest.target);
   if (!notTaken) return;
-  if (collected.length >= 15) return;
+  // Le serveur reste l'autorité sur la limite de collecte (15/semaine).
   const identity = coop.localIdentity?.();
   if (!identity || !coop.guild?.guildAction) return;
 
@@ -322,8 +322,18 @@ function renderStatus(): HTMLElement {
   const quests = coop ? activeQuests(coop) : [];
   if (quests.length === 0) {
     const empty = document.createElement("div");
-    empty.style.cssText = "opacity:.55;font-size:10px;";
-    empty.textContent = "Aucune quête active";
+    empty.style.cssText = "opacity:.75;font-size:10px;line-height:1.4;";
+    const data = coop?.weeklyQuests?.();
+    const perso = data?.quests.filter(q => !q.from) ?? [];
+    const guild = data?.quests.filter(q => q.from) ?? [];
+    const persoDone = perso.filter(q => q.progress >= q.target).length;
+    if (perso.length > 0 && persoDone === perso.length) {
+      empty.textContent =
+        `✓ ${persoDone}/${perso.length} perso terminées · ` +
+        `${guild.length} guild quests · collecte ${isCollectGuildEnabled() ? "active" : "désactivée"}`;
+    } else {
+      empty.textContent = "Aucune quête active";
+    }
     wrap.append(empty);
     return wrap;
   }
