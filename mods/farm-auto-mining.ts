@@ -35,16 +35,12 @@ const ORE_THRESHOLD: Record<AllOre, number> = {
 
 // Waypoints vers Copper Hills (userscript v20.7.0 navigateToHills).
 const HILLS_WAYPOINTS: ReadonlyArray<{ x: number; y: number; name: string }> = [
-  { x: 6176, y: 5150, name: "below arrival" },
-  { x: 6500, y: 5200, name: "east corridor" },
-  { x: 6930, y: 5200, name: "fence gap (in)" },
-  { x: 7000, y: 5200, name: "gap outside" },
-  { x: 7000, y: 4733, name: "bridge approach west" },
-  { x: 7314, y: 4733, name: "bridge center" },
-  { x: 7500, y: 4733, name: "bridge exit" },
-  { x: 7900, y: 4650, name: "bridge approach east" },
-  { x: 8500, y: 4500, name: "open countryside" },
-  { x: 9500, y: 4260, name: "hills interior" },
+  { x: 6506, y: 5110, name: "east corridor" },
+  { x: 6506, y: 5210, name: "drop south" },
+  { x: 7000, y: 5210, name: "east approach" },
+  { x: 7000, y: 4742, name: "bridge crossing (north)" },
+  { x: 7624, y: 4742, name: "bridge exit" },
+  { x: 9036, y: 4742, name: "hills interior" },
 ];
 
 type CoopLike = {
@@ -251,6 +247,10 @@ async function walkToHills(): Promise<boolean> {
   }
 
   if (isInHills()) { logAutoMining("✅ Hills atteint (tous wp)", "ok"); return true; }
+
+  logAutoMining("⚠️ Dernier waypoint atteint, push final vers l'est", "warn");
+  await marcherVers(9500, 4742, 5000, "town");
+  if (isInHills()) { logAutoMining("✅ Hills atteint (push final)", "ok"); return true; }
   logAutoMining("⚠️ Waypoints terminés sans hills", "warn");
   return isInHills();
 }
