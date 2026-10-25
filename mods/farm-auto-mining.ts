@@ -437,6 +437,7 @@ async function autoMiningRoutine(): Promise<void> {
     let lastProgressReason = "start";
     let lastMining = getMiningLevel();
     let lastMystCheck = 0;
+    let lastMystCount = 0; // [PATCH:myst-loop-fix]
     const nextLockedThreshold = (): number | null => {
       let min = Infinity;
       for (const k of result.fallbackFor.keys()) {
@@ -460,11 +461,19 @@ async function autoMiningRoutine(): Promise<void> {
       if (autoMiningMyst && Date.now() - lastMystCheck > 60000) {
         lastMystCheck = Date.now();
         const ready = getMysteriousReadyCount();
-        if (ready > 0) {
+        
+        // On ne lance le tour que si un NOUVEAU rocher est apparu (ready > lastMystCount)
+        if (ready > lastMystCount) {
           await mineMysterious();
+          // On mémorise le compteur APRÈS le tour (il aura baissé si on a miné)
+          lastMystCount = getMysteriousReadyCount();
+          
           const re = await activateMining([...autoMiningList]);
           if (re.ok) { result = re; lastProgressTs = Date.now(); lastProgressReason = "myst run"; }
           else logAutoMining("⚠️ Échec réactivation post-myst: " + re.reason, "warn");
+        } else if (ready === 0) {
+          // Si tout est vide, on reset la mémoire pour le prochain respawn
+          lastMystCount = 0;
         }
       }
 
