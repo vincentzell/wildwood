@@ -381,15 +381,23 @@ async function mineMysterious() {
   logAutoMining("💎 Tour des Mysterious Ores...", "ok");
   await stopNativeAutoFarm();
   
+  const currentLvl = getMiningLevel() ?? 0;
+  
   const spots = [
-    { name: "Copper", x: 10043, y: 6487 },
-    { name: "Iron", x: 10785, y: 6443 },
-    { name: "Mithril", x: 11864, y: 6488 },
-    { name: "Adamant", x: 12987, y: 6359 }
+    { name: "Copper", x: 10043, y: 6487, req: 0 },     // Copper
+    { name: "Iron", x: 10785, y: 6443, req: 50 },      // Iron
+    { name: "Mithril", x: 11864, y: 6488, req: 250 },  // Mithril
+    { name: "Adamant", x: 12987, y: 6359, req: 900 }   // Adamant
   ];
 
   for (const spot of spots) {
     if (autoMiningAbort) return;
+    
+    if (currentLvl < spot.req) {
+      logAutoMining(`💎 Skip Mysterious ${spot.name} (Lv ${currentLvl} < ${spot.req})`, "info");
+      continue;
+    }
+    
     logAutoMining(`💎 → Mysterious ${spot.name} (${spot.x}, ${spot.y})`);
     await marcherVers(spot.x, spot.y, 20000, "town");
     // Attendre que le rocher soit miné (12 secondes de base, 15s de sécurité)
