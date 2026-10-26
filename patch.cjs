@@ -1,15 +1,13 @@
 #!/usr/bin/env node
-// patch.cjs — retire le bouton "📤 Exporter" et la fonction exportTokens()
-// de misc-login-inject.ts. Le textarea contient déjà le JSON persisté (via
-// persistPending), donc copier suffit pour "exporter" manuellement. Le bouton
-// n'apporte rien : il relisait les mêmes clés que l'app utilise déjà.
+// patch.cjs — ajoute l'email du compte + le temps restant de validité du
+// token dans la carte du modmenu de misc-login-inject.
 //
-// Usage :
-//   node patch.cjs              # patch + typecheck + build
-//   node patch.cjs --no-build   # patch seulement
-//   node patch.cjs --commit     # patch + build + commit
-//   node patch.cjs --push       # patch + build + commit + push
+// État attendu : bouton "📤 Exporter" déjà retiré (patch précédent).
+// Ce patch ajoute :
+//   - decodeJwt() + checkToken() avant renderStatus()
+//   - une ligne "✓ email · valide Nmin" / "⏸ Token expiré" dans renderStatus()
 //
+// Usage : node patch.cjs [--no-build] [--commit] [--push]
 // Idempotent.
 
 'use strict';
@@ -22,6 +20,8 @@ const DO_COMMIT = FLAGS.has('--commit') || FLAGS.has('--push');
 const DO_PUSH   = FLAGS.has('--push');
 
 const LOGIN_FILE = 'mods/misc-login-inject.ts';
+const MARKER_HELPERS = '// [patched:token-status-helpers]';
+const MARKER_INFO    = '// [patched:token-status-info]';
 
 const log  = (...a) => console.log(...a);
 const warn = (...a) => console.warn('⚠️ ', ...a);
@@ -38,62 +38,106 @@ function run(cmd, { capture = false } = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 1. Retire le bloc btnExport (création + listener)
+// 1. Ajoute decodeJwt() + checkToken() avant renderStatus()
 // ─────────────────────────────────────────────────────────────────────────
-function removeExportButtonBlock() {
-  log('── Suppression bloc btnExport ──');
+function addHelpers() {
+  log('── Ajout helpers decodeJwt/checkToken ──');
   const src0 = readOrNull(LOGIN_FILE);
   if (src0 === null) { err(`${LOGIN_FILE} introuvable`); return false; }
 
-  if (!src0.includes('const btnExport = document.createElement')) {
-    log('  ✓ bloc btnExport déjà absent');
+  if (/function\s+decodeJwt\s*\(/.test(src0) && /function\s+checkToken\s*\(/.test(src0)) {
+    log('  ✓ helpers déjà présents');
     return true;
   }
 
-  const startIdx = src0.indexOf('const btnExport = document.createElement');
-  const endIdx = src0.indexOf('const btnInject = document.createElement');
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    err('bloc btnExport introuvable (start/end) — patch exact requis');
+  const anchor = 'function renderStatus(): HTMLElement {';
+  if (!src0.includes(anchor)) {
+    err('renderStatus() introuvable — colle le fichier, je ferai un patch exact');
     return false;
   }
 
-  let src = src0.slice(0, startIdx) + src0.slice(endIdx);
+  const block = `${MARKER_HELPERS}
+// ─── Décodage JWT (email + expiration) ───────────────────────────────────
+function decodeJwt(token: string): { exp?: number; email?: string; sub?: string; user_email?: string; preferred_username?: string } | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
 
-  // row.append(btnExport, btnInject) → row.append(btnInject)
-  const before = src;
-  src = src.replace(/row\.append\(\s*btnExport\s*,\s*btnInject\s*\)/, 'row.append(btnInject)');
-  if (src === before) {
-    warn('row.append(btnExport, btnInject) introuvable — vérifie manuellement');
-  }
+type TokenCheck = { valid: boolean; email: string; remainingMin: number; reason?: string };
 
+function checkToken(): TokenCheck {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(ID_TOKEN_KEY); } catch { /* idem */ }
+  if (!raw) return { valid: false, email: "", remainingMin: 0, reason: "Aucun token (pas connecté)" };
+  const payload = decodeJwt(raw);
+  if (!payload || !payload.exp) return { valid: false, email: "", remainingMin: 0, reason: "Token invalide" };
+  const remainingMs = payload.exp * 1000 - Date.now();
+  const email = payload.email
+    ?? payload.user_email
+    ?? payload.preferred_username
+    ?? payload.sub
+    ?? "";
+  return {
+    valid: remainingMs > 0,
+    email,
+    remainingMin: Math.round(remainingMs / 60000),
+    reason: remainingMs > 0 ? undefined : "Token expiré",
+  };
+}
+
+`;
+
+  const src = src0.replace(anchor, block + anchor);
   fs.writeFileSync(LOGIN_FILE, src, 'utf8');
-  log('  ✓ bloc btnExport retiré + row.append corrigé');
+  log('  ✓ decodeJwt() + checkToken() insérés');
   return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 2. Retire la fonction exportTokens()
+// 2. Injecte la ligne de statut dans renderStatus()
 // ─────────────────────────────────────────────────────────────────────────
-function removeExportTokensFn() {
-  log('── Suppression fonction exportTokens() ──');
+function addStatusLine() {
+  log('── Ajout ligne de statut ──');
   const src0 = readOrNull(LOGIN_FILE);
   if (src0 === null) { err(`${LOGIN_FILE} introuvable`); return false; }
 
-  if (!/function\s+exportTokens\s*\(/.test(src0)) {
-    log('  ✓ exportTokens() déjà absent');
+  if (src0.includes(MARKER_INFO)) {
+    log('  ✓ ligne de statut déjà présente');
     return true;
   }
 
-  // Match `\nfunction exportTokens(): string { ... \n}` (top-level, brace at col 0)
-  const re = /\nfunction\s+exportTokens\s*\(\s*\)\s*:\s*string\s*\{[\s\S]*?\n\}\n/;
-  if (!re.test(src0)) {
-    err('exportTokens() introuvable (signature différente ?) — patch exact requis');
+  // Ancre : `wrap.append(warnEl);` (unique dans le fichier)
+  const anchor = /(wrap\.append\(warnEl\);\r?\n)/;
+  if (!anchor.test(src0)) {
+    err('ancre `wrap.append(warnEl);` introuvable — patch exact requis');
     return false;
   }
 
-  const src = src0.replace(re, '\n');
+  const line = `
+  ${MARKER_INFO}
+  const check = checkToken();
+  const info = document.createElement("div");
+  info.style.cssText =
+    "font-size:10px;margin-bottom:4px;padding:4px 6px;border-radius:3px;" +
+    "background:rgba(0,0,0,.25);line-height:1.3;";
+  if (check.valid) {
+    info.style.color = "#69e56f";
+    info.textContent = \`✓ \${check.email || "(email inconnu)"} · valide \${check.remainingMin}min\`;
+  } else {
+    info.style.color = "#ffd85b";
+    info.textContent = \`⏸ \${check.reason ?? "Non connecté"}\`;
+  }
+  wrap.append(info);
+`;
+
+  const src = src0.replace(anchor, (m) => m + line);
   fs.writeFileSync(LOGIN_FILE, src, 'utf8');
-  log('  ✓ exportTokens() supprimé');
+  log('  ✓ ligne de statut ajoutée dans renderStatus()');
   return true;
 }
 
@@ -106,19 +150,21 @@ function verify() {
   if (src === null) { err(`${LOGIN_FILE} introuvable`); return false; }
 
   const problems = [];
-  if (src.includes('📤 Exporter'))              problems.push('texte "📤 Exporter" encore présent');
-  if (src.includes('const btnExport'))          problems.push('const btnExport encore présent');
-  if (/function\s+exportTokens/.test(src))      problems.push('exportTokens() encore présent');
-  if (/row\.append\(\s*btnExport/.test(src))    problems.push('row.append(btnExport…) encore présent');
-
-  if (!src.includes('📥 Injecter + reload'))    problems.push('bouton inject disparu (régression)');
-  if (!src.includes('row.append(btnInject)'))   problems.push('row.append(btnInject) manquant');
+  if (!/function\s+decodeJwt/.test(src))  problems.push('decodeJwt absent');
+  if (!/function\s+checkToken/.test(src)) problems.push('checkToken absent');
+  if (!src.includes(MARKER_INFO))         problems.push('ligne de statut absente');
+  if (!/const check = checkToken\(\)/.test(src))
+    problems.push('appel checkToken() dans renderStatus absent');
+  if (!/info\.textContent = `✓ \$\{check\.email/.test(src))
+    problems.push('texte du statut absent');
+  if (!src.includes('📥 Injecter'))
+    problems.push('bouton "📥 Injecter" disparu (régression)');
 
   if (problems.length) {
     for (const p of problems) err(p);
     return false;
   }
-  log(`  ✓ ${LOGIN_FILE} : OK (bouton export retiré, inject intact)`);
+  log(`  ✓ ${LOGIN_FILE} : OK (email + validité présents, inject intact)`);
   return true;
 }
 
@@ -141,7 +187,7 @@ function commitAndPush() {
   if (!DO_COMMIT) { log('── Commit/push (skip : utilise --commit ou --push) ──'); return true; }
   log('── git add + commit ──');
   if (!run('git add -A')) { err('git add a échoué'); return false; }
-  const msg = 'chore(login-inject): remove useless export button, textarea is the backup';
+  const msg = 'feat(login-inject): show account email + token validity in mod card';
   const out = run(`git commit -m "${msg}"`, { capture: true });
   if (/nothing to commit/i.test(out)) warn('git commit : rien à commit (déjà fait ?)');
   else if (/error/i.test(out)) { err('git commit a échoué : ' + out.trim()); return false; }
@@ -164,11 +210,11 @@ function main() {
   }
 
   const steps = [
-    ['Remove btnExport',  removeExportButtonBlock],
-    ['Remove exportFn',   removeExportTokensFn],
-    ['Verify',            verify],
-    ['Build',             buildAndTypecheck],
-    ['Commit/push',       commitAndPush],
+    ['Helpers',     addHelpers],
+    ['Status line', addStatusLine],
+    ['Verify',      verify],
+    ['Build',       buildAndTypecheck],
+    ['Commit/push', commitAndPush],
   ];
   for (const [name, fn] of steps) {
     if (!fn()) { err(`Étape "${name}" a échoué — arrêt.`); process.exit(2); }
@@ -180,18 +226,15 @@ function main() {
     log('');
     log('Commit + push manuels :');
     log('  git add -A');
-    log('  git commit -m "chore(login-inject): remove useless export button, textarea is the backup"');
+    log('  git commit -m "feat(login-inject): show account email + token validity in mod card"');
     log('  git push origin main');
   }
   log('');
-  log('Après hard-reload, la carte Login Inject ressemble à :');
+  log('Après hard-reload, la carte Login Inject affiche :');
   log('  ⚠️ Secret. Ne partage jamais. À usage personnel.');
-  log('  ✓ user@example.com · valide 42min');
-  log('  [textarea avec le JSON persisté]');
-  log('  [📥 Injecter + reload]     ← pleine largeur');
-  log('');
-  log('Pour "exporter", sélectionne le contenu du textarea et Ctrl+C.');
-  log('C\'est exactement ce que l\'ancien bouton te donnait, sans le bouton.');
+  log('  ✓ user@example.com · valide 42min      (ou ⏸ Token expiré / ⏸ Aucun token)');
+  log('  [textarea]');
+  log('  [📥 Injecter + reload]');
 }
 
 main();

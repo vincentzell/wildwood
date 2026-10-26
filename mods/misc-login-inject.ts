@@ -89,6 +89,40 @@ function persistPending(v: string): void {
 }
 
 // ─── Rendu (utilisé par l'overlay ET le mod manager) ─────────────────────
+// [patched:token-status-helpers]
+// ─── Décodage JWT (email + expiration) ───────────────────────────────────
+function decodeJwt(token: string): { exp?: number; email?: string; sub?: string; user_email?: string; preferred_username?: string } | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
+
+type TokenCheck = { valid: boolean; email: string; remainingMin: number; reason?: string };
+
+function checkToken(): TokenCheck {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(ID_TOKEN_KEY); } catch { /* idem */ }
+  if (!raw) return { valid: false, email: "", remainingMin: 0, reason: "Aucun token (pas connecté)" };
+  const payload = decodeJwt(raw);
+  if (!payload || !payload.exp) return { valid: false, email: "", remainingMin: 0, reason: "Token invalide" };
+  const remainingMs = payload.exp * 1000 - Date.now();
+  const email = payload.email
+    ?? payload.user_email
+    ?? payload.preferred_username
+    ?? payload.sub
+    ?? "";
+  return {
+    valid: remainingMs > 0,
+    email,
+    remainingMin: Math.round(remainingMs / 60000),
+    reason: remainingMs > 0 ? undefined : "Token expiré",
+  };
+}
+
 function renderStatus(): HTMLElement {
   const wrap = document.createElement("div");
 
@@ -96,6 +130,21 @@ function renderStatus(): HTMLElement {
   warnEl.style.cssText = "font-size:9px;color:#ff6767;margin-bottom:4px;font-weight:bold;";
   warnEl.textContent = "⚠️ Secret. Ne partage jamais. À usage personnel.";
   wrap.append(warnEl);
+
+  // [patched:token-status-info]
+  const check = checkToken();
+  const info = document.createElement("div");
+  info.style.cssText =
+    "font-size:10px;margin-bottom:4px;padding:4px 6px;border-radius:3px;" +
+    "background:rgba(0,0,0,.25);line-height:1.3;";
+  if (check.valid) {
+    info.style.color = "#69e56f";
+    info.textContent = `✓ ${check.email || "(email inconnu)"} · valide ${check.remainingMin}min`;
+  } else {
+    info.style.color = "#ffd85b";
+    info.textContent = `⏸ ${check.reason ?? "Non connecté"}`;
+  }
+  wrap.append(info);
 
   const ta = document.createElement("textarea");
   ta.value = pendingJson;
