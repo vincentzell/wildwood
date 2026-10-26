@@ -99,10 +99,22 @@ function isElementVisible(el: HTMLElement | null): boolean {
 }
 
 function isLoginPage(): boolean {
-  // 1. Si le HUD est réellement visible → on est en jeu
-  const hud = document.getElementById("hud");
-  if (hud && isElementVisible(hud)) return false;
+  // [patched] positive login signals first — see patch.cjs
+  {
+    const vis = (el: Element | null): boolean =>
+      !!el && (el as HTMLElement).offsetParent !== null;
+    if (
+      vis(document.getElementById('signInFromStartBtn')) ||
+      vis(document.getElementById('continueGuestBtn')) ||
+      vis(document.getElementById('accountChoicePanel'))
+    ) return true;
+    try {
+      if (new URLSearchParams(location.search).has('login-inject')) return true;
+      if (localStorage.getItem('wildwood-mod-login-inject-force') === '1') return true;
+    } catch { /* localStorage may be blocked */ }
+  }
 
+  // 1. Si le HUD est réellement visible → on est en jeu
   // 2. Boutons de login (visibles = page de login)
   const signIn = document.getElementById("signInFromStartBtn");
   if (signIn && isElementVisible(signIn)) return true;
@@ -428,4 +440,12 @@ export function registerLoginInjectMod(): void {
       syncVisibility();
     },
   });
+}
+
+// [patched:login-inject-v1]
+if (typeof window !== 'undefined') {
+  (window as any).__wildwoodDebug = {
+    ...((window as any).__wildwoodDebug || {}),
+    isLoginPage: typeof isLoginPage !== 'undefined' ? isLoginPage : undefined,
+  };
 }
