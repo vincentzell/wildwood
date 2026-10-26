@@ -83,16 +83,19 @@ export function isAutoQuestEnabled(): boolean {
 function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
-  // FIX: on farme les DEUX types de quêtes :
-  //  - perso  (from undefined) : tes quêtes hebdo individuelles
-  //  - guild  (from set)       : les quêtes collectées dans le pool de guilde
-  //
-  // Sans ça, après une collecte, les quêtes collectées restent non terminées
-  // (le mod ne les voit pas), et le serveur refuse toute nouvelle collecte
-  // avec "Finish some of your 15 collected quests first".
-  //
-  // On skip uniquement les quêtes déjà prises par un autre joueur.
-  return data.quests.filter(q => q.progress < q.target && !q.takenBy);
+  // // [patched:skip-guild-stat-quests]
+  // Le serveur renvoie aussi des "guild stat quests" au format
+  // { mapId, stat: "speed"|"armor"|..., target, progress, from: "your guild" }
+  // sans champ `enemy`. Le mod ne sait pas les farmer (il faudrait équiper
+  // la bonne stat et farmer la bonne map). On les ignore pour ne pas boucler
+  // sur `stat introuvable pour undefined` dans tryOneQuest().
+  return data.quests.filter(q =>
+    q.progress < q.target &&
+    !q.takenBy &&
+    typeof q.enemy === "string" &&
+    q.enemy.length > 0 &&
+    ENEMY_TYPES[q.enemy as keyof typeof ENEMY_TYPES] !== undefined
+  );
 }
 
 async function tryCollectGuild(coop: CoopLike): Promise<void> {
@@ -282,6 +285,29 @@ async function runLoop(coop: CoopLike): Promise<void> {
 
 function startPolling(): void {
   if (intervalId !== null) return;
+  // // [patched:stat-groups-probe]
+  // Dump une seule fois des groupes d'aggro disponibles dans #autoFarmSheet.
+  // Utile pour vérifier si les guild stat quests ("stat:speed", "stat:armor", …)
+  // ont un groupe natif — si oui, une future extension pourrait les farmer.
+  try {
+    const w = window as unknown as { __wildwoodQuestProbeDone?: boolean };
+    if (!w.__wildwoodQuestProbeDone) {
+      w.__wildwoodQuestProbeDone = true;
+      setTimeout(() => {
+        const sheet = document.getElementById("autoFarmSheet");
+        const groups = sheet
+          ? [...sheet.querySelectorAll<HTMLElement>("[data-group]")].map(el => el.dataset.group ?? "")
+          : [];
+        console.info("[mod-auto-quest] groupes aggro disponibles :", groups);
+        const coop = getCoop();
+        const statQuests = coop?.weeklyQuests?.()?.quests.filter(q => (q as { stat?: string }).stat) ?? [];
+        if (statQuests.length > 0) {
+          console.info("[mod-auto-quest] guild stat quests détectées :", statQuests.length);
+          console.info("[mod-auto-quest] stats demandées :", [...new Set(statQuests.map(q => (q as { stat?: string }).stat))]);
+        }
+      }, 2000);
+    }
+  } catch { /* probe best-effort */ }
   const tick = () => {
     if (!isAutoQuestEnabled() || running) return;
     const coop = getCoop();
