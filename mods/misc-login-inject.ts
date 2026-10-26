@@ -1,9 +1,9 @@
-// mods/misc-token-injector.ts
+// mods/misc-login-inject.ts
 import { REGISTERED_MODS } from "./registry";
 
-const STORAGE_KEY = "wildwood-mod-token-injector-enabled";
-const PENDING_KEY = "wildwood-mod-token-injector-pending";
-const RELOAD_GUARD = "__wt_auto_inject_attempted";
+const STORAGE_KEY = "wildwood-mod-login-inject-enabled";
+const PENDING_KEY = "wildwood-mod-login-inject-pending";
+const RELOAD_GUARD = "__wildwood_login_inject_attempted";
 const ID_TOKEN_KEY = "wss://maincloud.spacetimedb.com/wildwood-coop/auth_token/spacetimeauth_id_token_v1";
 
 function isEnabled(): boolean {
@@ -53,53 +53,30 @@ function injectTokens(json: string): { ok: boolean; written: number; error?: str
   return { ok: true, written };
 }
 
-function decodeJwt(token: string): { exp?: number; email?: string } | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
-    return JSON.parse(atob(padded));
-  } catch { return null; }
+// ─── Détection de la page de login ───────────────────────────────────────
+// Signaux POSITIFS uniquement. #hud est le conteneur de l'app et reste
+// visible sur la page de login — on ne l'utilise donc pas comme signal.
+function isLoginPage(): boolean {
+  const vis = (el: Element | null): boolean =>
+    !!el && (el as HTMLElement).offsetParent !== null;
+  if (vis(document.getElementById("signInFromStartBtn")))   return true;
+  if (vis(document.getElementById("continueGuestBtn")))     return true;
+  if (vis(document.getElementById("accountChoicePanel")))   return true;
+  return false;
 }
 
-type TokenCheck = { valid: boolean; email: string; remainingMin: number; reason?: string };
-
-function checkToken(): TokenCheck {
-  let raw: string | null = null;
-  try { raw = localStorage.getItem(ID_TOKEN_KEY); } catch { /* idem */ }
-  if (!raw) return { valid: false, email: "", remainingMin: 0, reason: "Aucun token (pas connecté)" };
-  const payload = decodeJwt(raw);
-  if (!payload || !payload.exp) return { valid: false, email: "", remainingMin: 0, reason: "Token invalide" };
-  const remainingMs = payload.exp * 1000 - Date.now();
-  return {
-    valid: remainingMs > 0,
-    email: payload.email ?? "",
-    remainingMin: Math.round(remainingMs / 60000),
-    reason: remainingMs > 0 ? undefined : "Token expiré",
-  };
-}
-
+// ─── Auto-inject au boot (si pending + pas de token valide) ──────────────
 function tryAutoInject(): void {
   if (!isEnabled()) return;
   try {
-    // [patched] TTL 5s au lieu du flag sticky — autorise la réinjection après expiration
-    const _lastAttempt = parseInt(sessionStorage.getItem(RELOAD_GUARD) || "0", 10);
-    if (Date.now() - _lastAttempt < 5000) return;
+    if (localStorage.getItem(RELOAD_GUARD) === "1") return;
     const pending = localStorage.getItem(PENDING_KEY);
     if (!pending) return;
-    const check = checkToken();
-    if (check.valid) return;
+    // Si un token est déjà présent, ne pas écraser
+    const existing = localStorage.getItem(ID_TOKEN_KEY);
+    if (existing) return;
     let parsed: Record<string, string>;
     try { parsed = JSON.parse(pending); } catch { return; }
-    const idToken = parsed[ID_TOKEN_KEY];
-    if (!idToken) return;
-    const payload = decodeJwt(idToken);
-    if (!payload || !payload.exp) return;
-    if (payload.exp * 1000 <= Date.now()) {
-      console.warn("[mod-token-injector] pending token expiré, ré-extrais un token frais");
-      return;
-    }
     let written = 0;
     for (const [k, v] of Object.entries(parsed)) {
       if (shouldInclude(k) && typeof v === "string") {
@@ -108,8 +85,8 @@ function tryAutoInject(): void {
       }
     }
     if (written > 0) {
-      console.info(`[mod-token-injector] auto-injection ${written} clé(s), reload…`);
-      sessionStorage.setItem(RELOAD_GUARD, String(Date.now())); // [patched] timestamp
+      console.info(`[mod-login-inject] auto-injection ${written} clé(s), reload…`);
+      localStorage.setItem(RELOAD_GUARD, "1");
       location.reload();
     }
   } catch { /* idem */ }
@@ -123,32 +100,14 @@ function persistPending(v: string): void {
   try { localStorage.setItem(PENDING_KEY, v); } catch { /* idem */ }
 }
 
+// ─── Rendu (utilisé par l'overlay ET le mod manager) ─────────────────────
 function renderStatus(): HTMLElement {
   const wrap = document.createElement("div");
 
-  const warn = document.createElement("div");
-  warn.style.cssText = "font-size:9px;color:#ff6767;margin-bottom:4px;font-weight:bold;";
-  warn.textContent = "⚠️ Secret. Ne partage jamais. À usage personnel.";
-  wrap.append(warn);
-
-  const check = checkToken();
-  const info = document.createElement("div");
-  info.style.cssText = "font-size:9px;margin-bottom:4px;";
-  if (check.valid) {
-    info.style.color = "#69e56f";
-    info.textContent = `✓ ${check.email} · valide ${check.remainingMin}min`;
-  } else {
-    info.style.color = "#ffd85b";
-    info.textContent = `⏸ ${check.reason ?? "Non connecté"}`;
-  }
-  wrap.append(info);
-
-  if (pendingJson) {
-    const pendingInfo = document.createElement("div");
-    pendingInfo.style.cssText = "font-size:8px;opacity:.55;margin-bottom:4px;";
-    pendingInfo.textContent = "Token en mémoire (auto-réinjecté au boot si expiré).";
-    wrap.append(pendingInfo);
-  }
+  const warnEl = document.createElement("div");
+  warnEl.style.cssText = "font-size:9px;color:#ff6767;margin-bottom:4px;font-weight:bold;";
+  warnEl.textContent = "⚠️ Secret. Ne partage jamais. À usage personnel.";
+  wrap.append(warnEl);
 
   const ta = document.createElement("textarea");
   ta.value = pendingJson;
@@ -200,17 +159,16 @@ function renderStatus(): HTMLElement {
       return;
     }
     persistPending(v);
-    try { sessionStorage.removeItem(RELOAD_GUARD); } catch { /* idem */ }
-    console.info(`[mod-token-injector] ${result.written} clé(s) injectée(s), reload…`);
+    try { localStorage.removeItem(RELOAD_GUARD); } catch { /* idem */ }
+    console.info(`[mod-login-inject] ${result.written} clé(s) injectée(s), reload…`);
     location.reload();
   });
 
   row.append(btnExport, btnInject);
   wrap.append(row);
 
-  // Bouton "Continue as Guest" — uniquement visible hors jeu (page de login)
-  const onLoginPage = !document.getElementById("hud");
-  if (onLoginPage) {
+  // Bouton "Continue as Guest" — uniquement visible sur la page de login
+  if (isLoginPage()) {
     const btnGuest = document.createElement("button");
     btnGuest.textContent = "🎮 Jouer en invité";
     btnGuest.style.cssText =
@@ -235,10 +193,54 @@ function renderStatus(): HTMLElement {
   return wrap;
 }
 
-export function registerTokenInjectorMod(): void {
+// ─── Overlay flottant sur la page de login ───────────────────────────────
+let _overlayMounted = false;
+const OVERLAY_ID = "wildwood-login-inject-overlay";
+
+function mountLoginOverlay(): void {
+  if (_overlayMounted) return;
+  if (document.getElementById(OVERLAY_ID)) return;
+  if (!isLoginPage()) return;
+  _overlayMounted = true;
+
+  const host = document.createElement("div");
+  host.id = OVERLAY_ID;
+  host.dataset.wildwoodMod = "login-inject";
+  host.style.cssText =
+    "position:fixed;top:16px;right:16px;z-index:2147483647;" +
+    "width:320px;max-height:calc(100vh - 32px);overflow:auto;" +
+    "padding:10px;background:rgba(20,20,30,.95);color:#e0e0e0;" +
+    "border:1px solid rgba(255,255,255,.2);border-radius:6px;" +
+    "font-family:system-ui,sans-serif;font-size:11px;" +
+    "box-shadow:0 4px 20px rgba(0,0,0,.5);";
+  host.appendChild(renderStatus());
+  document.body.appendChild(host);
+
+  // Démontage dès qu'on quitte la page de login
+  const obs = new MutationObserver(() => {
+    if (!isLoginPage()) {
+      host.remove();
+      _overlayMounted = false;
+      obs.disconnect();
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+}
+
+function watchLoginPage(): void {
+  if (isLoginPage()) { mountLoginOverlay(); return; }
+  const obs = new MutationObserver(() => {
+    if (isLoginPage()) { mountLoginOverlay(); obs.disconnect(); }
+  });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+  setTimeout(() => obs.disconnect(), 60000);
+}
+
+// ─── Enregistrement ──────────────────────────────────────────────────────
+export function registerLoginInjectMod(): void {
   REGISTERED_MODS.push({
-        id: "misc-token-injector",
-    name: "Token Injector",
+    id: "misc-login-inject",
+    name: "Login Inject",
     category: "MISC",
     loginCompatible: true,
     switch: {
@@ -250,8 +252,9 @@ export function registerTokenInjectorMod(): void {
       },
     },
     status: { render: renderStatus, intervalMs: 2000 },
-    install: () => tryAutoInject(),
+    install: () => {
+      tryAutoInject();
+      watchLoginPage();
+    },
   });
 }
-
-// [patched:token-injector-v2]

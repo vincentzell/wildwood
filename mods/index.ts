@@ -14,6 +14,7 @@ import { registerAutoUpgradeMod } from "./misc-auto-upgrade";
 import { registerOpenDevMod } from "./misc-open-dev";
 import { REGISTERED_MODS } from "./registry";
 import { registerTokenInjectorMod } from "./misc-token-injector";
+import { registerLoginInjectMod } from "./misc-login-inject";
 import { registerTradeMarketMod } from "./trade-market";
 import { registerTradeBidVolumeMod } from "./trade-bid-volume";
 import { registerAutoWoodMod } from "./farm-auto-wood";
@@ -34,6 +35,8 @@ export function installAllMods(): void {
   registerAutoUpgradeMod();
   registerOpenDevMod();
    registerTokenInjectorMod();
+
+   registerLoginInjectMod();
   registerTradeMarketMod();
     registerTradeBidVolumeMod();
   registerAutoWoodMod();

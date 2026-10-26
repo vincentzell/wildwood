@@ -1,104 +1,231 @@
 #!/usr/bin/env node
-// patch.cjs — fix complet "token avant login + overlay sur login page"
-// Usage : node patch.cjs (depuis la racine du repo)
+// patch.cjs — reconstruit misc-login-inject.ts de zéro (overlay login page
+// fonctionnel, isLoginPage() sans le bug #hud) + répare mods/index.ts.
+//
+// Usage : node patch.cjs   (depuis C:\Users\Zell\Desktop\wildwood)
 // Idempotent.
 
 'use strict';
 const fs = require('fs');
 
-const TOKEN_FILE = 'mods/misc-token-injector.ts';
-const LOGIN_FILE = 'mods/misc-login-inject.ts';
-const INDEX_FILE = 'mods/index.ts';
-const USERSCRIPT = 'wildwood-auto-token.user.js';
+const LOGIN = 'mods/misc-login-inject.ts';
+const INDEX = 'mods/index.ts';
 
-const readOrNull = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
-const rep = (src, from, to) => src.includes(from) ? src.split(from).join(to) : null;
+const log = console.log;
+const warn = (m) => console.warn('⚠️  ' + m);
 
 // ─────────────────────────────────────────────────────────────────────────
-// 1. Patches sur misc-token-injector.ts
+// Contenu complet de misc-login-inject.ts
+// Reproduit le comportement original + fix #hud dans isLoginPage().
 // ─────────────────────────────────────────────────────────────────────────
-function patchTokenInjector() {
-  const src0 = readOrNull(TOKEN_FILE);
-  if (src0 === null) {
-    console.error(`❌ ${TOKEN_FILE} introuvable.`);
-    process.exit(1);
-  }
-  let src = src0;
-  const applied = [];
-  const skipped = [];
+const LOGIN_SRC = `// mods/misc-login-inject.ts
+import { REGISTERED_MODS } from "./registry";
 
-  // ── 1a. Guard check : sessionStorage "1" sticky → TTL 5s
-  if (!src.includes('TTL 5s au lieu du flag sticky')) {
-    const r = rep(
-      src,
-      'if (sessionStorage.getItem(RELOAD_GUARD) === "1") return;',
-      '// [patched] TTL 5s au lieu du flag sticky — autorise la réinjection après expiration\n' +
-      '    const _lastAttempt = parseInt(sessionStorage.getItem(RELOAD_GUARD) || "0", 10);\n' +
-      '    if (Date.now() - _lastAttempt < 5000) return;'
-    );
-    if (r !== null) { src = r; applied.push('guard check (flag → TTL 5s)'); }
-    else skipped.push('guard check (introuvable)');
-  }
+const STORAGE_KEY = "wildwood-mod-login-inject-enabled";
+const PENDING_KEY = "wildwood-mod-login-inject-pending";
+const RELOAD_GUARD = "__wildwood_login_inject_attempted";
+const ID_TOKEN_KEY = "wss://maincloud.spacetimedb.com/wildwood-coop/auth_token/spacetimeauth_id_token_v1";
 
-  // ── 1b. Guard set : "1" → timestamp
-  if (!src.includes('[patched] timestamp')) {
-    const r = rep(
-      src,
-      'sessionStorage.setItem(RELOAD_GUARD, "1");',
-      'sessionStorage.setItem(RELOAD_GUARD, String(Date.now())); // [patched] timestamp'
-    );
-    if (r !== null) { src = r; applied.push('guard set (flag → timestamp)'); }
-    else skipped.push('guard set (introuvable)');
-  }
+function isEnabled(): boolean {
+  try { return localStorage.getItem(STORAGE_KEY) !== "false"; }
+  catch { return true; }
+}
 
-  // ── 1c. Guest selector : ajoute #continueGuestBtn (celui que ton DOM expose)
-  if (!src.includes('#continueGuestBtn')) {
-    const r = rep(
-      src,
-      `"#continueAsGuestBtn, [data-action='continueAsGuest']"`,
-      `"#continueGuestBtn, #continueAsGuestBtn, [data-action='continueAsGuest']"`
-    );
-    if (r !== null) { src = r; applied.push('guest selector (+#continueGuestBtn)'); }
-    else skipped.push('guest selector (introuvable)');
-  }
+function shouldInclude(key: string): boolean {
+  return (
+    /auth_token\\/spacetimeauth_/.test(key) ||
+    /auth_token\\/legal_consent_/.test(key) ||
+    /auth_token\\/guest_/.test(key)
+  );
+}
 
-  // ── 1d. onLoginPage : !#hud → isLoginPage()
-  if (!src.includes('const onLoginPage = isLoginPage();')) {
-    const r = rep(
-      src,
-      'const onLoginPage = !document.getElementById("hud");',
-      'const onLoginPage = isLoginPage(); // [patched] positive signals, pas #hud'
-    );
-    if (r !== null) { src = r; applied.push('onLoginPage → isLoginPage()'); }
-    else skipped.push('onLoginPage (introuvable)');
-  }
+function exportTokens(): string {
+  const out: Record<string, string> = {};
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (shouldInclude(k)) {
+        const v = localStorage.getItem(k);
+        if (v !== null) out[k] = v;
+      }
+    }
+  } catch { /* idem */ }
+  return JSON.stringify(out, null, 2);
+}
 
-  // ── 1e. Injecte isLoginPage + mountLoginOverlay + watchLoginPage
-  if (!src.includes('function isLoginPage(): boolean')) {
-    const anchor = 'export function registerTokenInjectorMod(): void {';
-    const block = `
-// ─── [patched:overlay] Login-page overlay ───────────────────────────────
-// Détection par signaux POSITIFS uniquement — jamais #hud (qui est le
-// conteneur de l'app et est visible même sur la page de login).
+function injectTokens(json: string): { ok: boolean; written: number; error?: string } {
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(json); }
+  catch (e) { return { ok: false, written: 0, error: \`JSON invalide: \${(e as Error).message}\` }; }
+  if (typeof parsed !== "object" || parsed === null) {
+    return { ok: false, written: 0, error: "Le JSON doit être un objet" };
+  }
+  let written = 0;
+  try {
+    for (const [k, v] of Object.entries(parsed)) {
+      if (!shouldInclude(k)) continue;
+      if (typeof v !== "string") continue;
+      localStorage.setItem(k, v);
+      written++;
+    }
+  } catch (e) {
+    return { ok: false, written, error: \`Erreur écriture: \${(e as Error).message}\` };
+  }
+  return { ok: true, written };
+}
+
+// ─── Détection de la page de login ───────────────────────────────────────
+// Signaux POSITIFS uniquement. #hud est le conteneur de l'app et reste
+// visible sur la page de login — on ne l'utilise donc pas comme signal.
 function isLoginPage(): boolean {
   const vis = (el: Element | null): boolean =>
     !!el && (el as HTMLElement).offsetParent !== null;
-  if (vis(document.getElementById("signInFromStartBtn"))) return true;
-  if (vis(document.getElementById("continueGuestBtn")))   return true;
-  if (vis(document.getElementById("accountChoicePanel"))) return true;
+  if (vis(document.getElementById("signInFromStartBtn")))   return true;
+  if (vis(document.getElementById("continueGuestBtn")))     return true;
+  if (vis(document.getElementById("accountChoicePanel")))   return true;
   return false;
 }
 
+// ─── Auto-inject au boot (si pending + pas de token valide) ──────────────
+function tryAutoInject(): void {
+  if (!isEnabled()) return;
+  try {
+    if (localStorage.getItem(RELOAD_GUARD) === "1") return;
+    const pending = localStorage.getItem(PENDING_KEY);
+    if (!pending) return;
+    // Si un token est déjà présent, ne pas écraser
+    const existing = localStorage.getItem(ID_TOKEN_KEY);
+    if (existing) return;
+    let parsed: Record<string, string>;
+    try { parsed = JSON.parse(pending); } catch { return; }
+    let written = 0;
+    for (const [k, v] of Object.entries(parsed)) {
+      if (shouldInclude(k) && typeof v === "string") {
+        localStorage.setItem(k, v);
+        written++;
+      }
+    }
+    if (written > 0) {
+      console.info(\`[mod-login-inject] auto-injection \${written} clé(s), reload…\`);
+      localStorage.setItem(RELOAD_GUARD, "1");
+      location.reload();
+    }
+  } catch { /* idem */ }
+}
+
+let pendingJson = "";
+try { pendingJson = localStorage.getItem(PENDING_KEY) ?? ""; } catch { /* idem */ }
+
+function persistPending(v: string): void {
+  pendingJson = v;
+  try { localStorage.setItem(PENDING_KEY, v); } catch { /* idem */ }
+}
+
+// ─── Rendu (utilisé par l'overlay ET le mod manager) ─────────────────────
+function renderStatus(): HTMLElement {
+  const wrap = document.createElement("div");
+
+  const warnEl = document.createElement("div");
+  warnEl.style.cssText = "font-size:9px;color:#ff6767;margin-bottom:4px;font-weight:bold;";
+  warnEl.textContent = "⚠️ Secret. Ne partage jamais. À usage personnel.";
+  wrap.append(warnEl);
+
+  const ta = document.createElement("textarea");
+  ta.value = pendingJson;
+  ta.rows = 5;
+  ta.placeholder = "Colle ici le JSON exporté depuis l'origine...";
+  ta.style.cssText =
+    "width:100%;box-sizing:border-box;background:rgba(0,0,0,.3);color:inherit;" +
+    "border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:4px;" +
+    "font-family:monospace;font-size:9px;resize:vertical;";
+  ta.addEventListener("input", () => persistPending(ta.value));
+  wrap.append(ta);
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:4px;margin-top:4px;";
+
+  const btnExport = document.createElement("button");
+  btnExport.textContent = "📤 Exporter";
+  btnExport.style.cssText =
+    "flex:1;padding:4px;background:rgba(116,216,255,.22);color:inherit;border:0;" +
+    "border-radius:3px;cursor:pointer;font-size:10px;";
+  btnExport.addEventListener("click", () => {
+    const json = exportTokens();
+    persistPending(json);
+    ta.value = json;
+    navigator.clipboard.writeText(json).catch(() => {
+      const ta2 = document.createElement("textarea");
+      ta2.value = json;
+      ta2.style.cssText = "position:fixed;left:-9999px;";
+      document.body.appendChild(ta2);
+      ta2.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta2);
+    });
+    btnExport.textContent = "✅ Copié";
+    setTimeout(() => { btnExport.textContent = "📤 Exporter"; }, 1500);
+  });
+
+  const btnInject = document.createElement("button");
+  btnInject.textContent = "📥 Injecter + reload";
+  btnInject.style.cssText =
+    "flex:1;padding:4px;background:rgba(105,229,111,.22);color:inherit;border:0;" +
+    "border-radius:3px;cursor:pointer;font-size:10px;";
+  btnInject.addEventListener("click", () => {
+    const v = ta.value.trim();
+    if (!v) { alert("Colle un JSON d'abord."); return; }
+    const result = injectTokens(v);
+    if (!result.ok) {
+      alert(\`Erreur: \${result.error ?? "inconnu"}\`);
+      return;
+    }
+    persistPending(v);
+    try { localStorage.removeItem(RELOAD_GUARD); } catch { /* idem */ }
+    console.info(\`[mod-login-inject] \${result.written} clé(s) injectée(s), reload…\`);
+    location.reload();
+  });
+
+  row.append(btnExport, btnInject);
+  wrap.append(row);
+
+  // Bouton "Continue as Guest" — uniquement visible sur la page de login
+  if (isLoginPage()) {
+    const btnGuest = document.createElement("button");
+    btnGuest.textContent = "🎮 Jouer en invité";
+    btnGuest.style.cssText =
+      "width:100%;margin-top:6px;padding:6px;background:rgba(255,215,90,.22);" +
+      "color:inherit;border:0;border-radius:3px;cursor:pointer;" +
+      "font-size:11px;font-weight:900;";
+    btnGuest.addEventListener("click", () => {
+      const coop = (window as unknown as { wildstatCoop?: { continueAsGuest?: () => void } }).wildstatCoop;
+      if (typeof coop?.continueAsGuest === "function") {
+        coop.continueAsGuest();
+      } else {
+        const native = document.querySelector<HTMLButtonElement>(
+          "#continueGuestBtn, #continueAsGuestBtn, [data-action='continueAsGuest']"
+        );
+        if (native) native.click();
+        else alert("wildstatCoop.continueAsGuest indisponible");
+      }
+    });
+    wrap.append(btnGuest);
+  }
+
+  return wrap;
+}
+
+// ─── Overlay flottant sur la page de login ───────────────────────────────
 let _overlayMounted = false;
+const OVERLAY_ID = "wildwood-login-inject-overlay";
 
 function mountLoginOverlay(): void {
   if (_overlayMounted) return;
-  if (document.getElementById("wildwood-token-injector-overlay")) return;
+  if (document.getElementById(OVERLAY_ID)) return;
   if (!isLoginPage()) return;
   _overlayMounted = true;
 
   const host = document.createElement("div");
-  host.id = "wildwood-token-injector-overlay";
+  host.id = OVERLAY_ID;
+  host.dataset.wildwoodMod = "login-inject";
   host.style.cssText =
     "position:fixed;top:16px;right:16px;z-index:2147483647;" +
     "width:320px;max-height:calc(100vh - 32px);overflow:auto;" +
@@ -109,6 +236,7 @@ function mountLoginOverlay(): void {
   host.appendChild(renderStatus());
   document.body.appendChild(host);
 
+  // Démontage dès qu'on quitte la page de login
   const obs = new MutationObserver(() => {
     if (!isLoginPage()) {
       host.remove();
@@ -128,143 +256,167 @@ function watchLoginPage(): void {
   setTimeout(() => obs.disconnect(), 60000);
 }
 
+// ─── Enregistrement ──────────────────────────────────────────────────────
+export function registerLoginInjectMod(): void {
+  REGISTERED_MODS.push({
+    id: "misc-login-inject",
+    name: "Login Inject",
+    category: "MISC",
+    loginCompatible: true,
+    switch: {
+      label: "On",
+      get: isEnabled,
+      set: (value) => {
+        try { localStorage.setItem(STORAGE_KEY, String(value)); }
+        catch { /* idem */ }
+      },
+    },
+    status: { render: renderStatus, intervalMs: 2000 },
+    install: () => {
+      tryAutoInject();
+      watchLoginPage();
+    },
+  });
+}
 `;
-    if (src.includes(anchor)) {
-      src = src.replace(anchor, block + anchor);
-      applied.push('isLoginPage + mountLoginOverlay + watchLoginPage ajoutés');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Écriture de misc-login-inject.ts
+// ─────────────────────────────────────────────────────────────────────────
+function writeLoginFile() {
+  log('── Création misc-login-inject.ts ──');
+  fs.writeFileSync(LOGIN, LOGIN_SRC, 'utf8');
+  log(`  ✓ ${LOGIN} écrit (${LOGIN_SRC.split('\n').length} lignes)`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Réparation de mods/index.ts
+// ─────────────────────────────────────────────────────────────────────────
+function fixIndex() {
+  log('── Réparation mods/index.ts ──');
+  let src;
+  try { src = fs.readFileSync(INDEX, 'utf8'); }
+  catch { warn(`${INDEX} introuvable`); return false; }
+
+  const src0 = src;
+
+  // a) import
+  const hasImport = /from\s+["']\.\/misc-login-inject["']/.test(src);
+  if (!hasImport) {
+    // Cherche une ligne d'import existante pour s'ancrer
+    const anchorMatch = src.match(/^import\s+\{[^}]*\}\s+from\s+["']\.\/misc-token-injector["'];?\s*$/m);
+    if (anchorMatch) {
+      const line = anchorMatch[0];
+      src = src.replace(line, `${line}\nimport { registerLoginInjectMod } from "./misc-login-inject";`);
+      log('  ✓ import registerLoginInjectMod ajouté (après token-injector)');
     } else {
-      skipped.push('insertion overlay (anchor introuvable)');
-    }
-  }
-
-  // ── 1f. install() : ajoute watchLoginPage
-  if (!src.includes('install: () => { tryAutoInject(); watchLoginPage(); }')) {
-    const r = rep(
-      src,
-      'install: () => tryAutoInject(),',
-      'install: () => { tryAutoInject(); watchLoginPage(); },'
-    );
-    if (r !== null) { src = r; applied.push('install() wire watchLoginPage'); }
-    else skipped.push('install() (introuvable)');
-  }
-
-  if (src === src0) {
-    console.log(`✓ ${TOKEN_FILE} : aucun changement.`);
-    return;
-  }
-  fs.writeFileSync(`${TOKEN_FILE}.bak`, src0, 'utf8');
-  fs.writeFileSync(TOKEN_FILE, src, 'utf8');
-  console.log(`✅ ${TOKEN_FILE} patché (backup .bak)`);
-  applied.forEach((c) => console.log(`   • ${c}`));
-  skipped.forEach((c) => console.warn(`   ⚠️  ${c}`));
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// 2. Supprime misc-login-inject.ts + refs index.ts
-// ─────────────────────────────────────────────────────────────────────────
-function removeLoginInject() {
-  if (fs.existsSync(LOGIN_FILE)) {
-    const c = readOrNull(LOGIN_FILE);
-    if (c !== null) fs.writeFileSync(`${LOGIN_FILE}.bak`, c, 'utf8');
-    fs.unlinkSync(LOGIN_FILE);
-    console.log(`✅ ${LOGIN_FILE} supprimé (backup .bak)`);
-  } else {
-    console.log(`✓ ${LOGIN_FILE} déjà absent.`);
-  }
-
-  const idx0 = readOrNull(INDEX_FILE);
-  if (idx0 === null) { console.warn(`⚠️  ${INDEX_FILE} introuvable.`); return; }
-  const idx = idx0
-    .split(/\r?\n/)
-    .filter((l) => !/misc-login-inject/i.test(l) && !/\bregisterLoginInjectMod\b/i.test(l))
-    .join('\n');
-  if (idx !== idx0) {
-    fs.writeFileSync(`${INDEX_FILE}.bak`, idx0, 'utf8');
-    fs.writeFileSync(INDEX_FILE, idx, 'utf8');
-    console.log(`✅ ${INDEX_FILE} nettoyé (import + registerLoginInjectMod)`);
-  } else {
-    console.log(`✓ ${INDEX_FILE} : rien à retirer.`);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// 3. Userscript Tampermonkey (document-start = avant boot app)
-// ─────────────────────────────────────────────────────────────────────────
-function createUserscript() {
-  if (fs.existsSync(USERSCRIPT)) {
-    console.log(`✓ ${USERSCRIPT} existe déjà.`);
-    return;
-  }
-  const body = `// ==UserScript==
-// @name         Wildwood auto-token
-// @namespace    wildwood.local
-// @version      1.1
-// @description  Injecte le token Wildwood AVANT le boot de l'app (zéro flash login)
-// @match        https://vincentzell.github.io/wildwood/*
-// @run-at       document-start
-// @grant        none
-// ==/UserScript==
-(() => {
-  const ID = 'wss://maincloud.spacetimedb.com/wildwood-coop/auth_token/spacetimeauth_id_token_v1';
-  const pending = localStorage.getItem('wildwood-mod-token-injector-pending');
-  if (!pending) return;
-  let parsed;
-  try { parsed = JSON.parse(pending); } catch { return; }
-  if (!parsed || typeof parsed !== 'object') return;
-
-  // Vérifie l'expiration du JWT avant d'écrire
-  const raw = parsed[ID];
-  if (typeof raw === 'string') {
-    try {
-      const parts = raw.split('.');
-      if (parts.length === 3) {
-        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-        const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
-        const payload = JSON.parse(atob(padded));
-        if (payload.exp && payload.exp * 1000 <= Date.now()) {
-          console.warn('[wildwood] pending token expiré — login page affichée');
-          return;
-        }
+      // Fallback : insère après la première ligne d'import
+      const firstImport = src.match(/^import\s+.*$/m);
+      if (firstImport) {
+        src = src.replace(firstImport[0], `${firstImport[0]}\nimport { registerLoginInjectMod } from "./misc-login-inject";`);
+        log('  ✓ import ajouté (après le premier import)');
+      } else {
+        warn('impossible de trouver où insérer l\'import');
       }
-    } catch { /* opaque : tente quand même */ }
+    }
+  } else {
+    log('  ✓ import déjà présent');
   }
 
-  let written = 0;
-  for (const [k, v] of Object.entries(parsed)) {
-    if (typeof v === 'string' && /auth_token\\/(spacetimeauth_|legal_consent_|guest_)/.test(k)) {
-      localStorage.setItem(k, v);
-      written++;
+  // b) appel
+  const hasCall = /\bregisterLoginInjectMod\s*\(\s*\)/.test(src);
+  if (!hasCall) {
+    const callAnchor = src.match(/^(\s*)registerTokenInjectorMod\s*\(\s*\)\s*;?\s*$/m);
+    if (callAnchor) {
+      src = src.replace(callAnchor[0], `${callAnchor[1]}registerTokenInjectorMod();\n${callAnchor[1]}registerLoginInjectMod();`);
+      log('  ✓ appel registerLoginInjectMod() ajouté (après token-injector)');
+    } else {
+      // Fallback : ajoute dans installAllMods() si on le trouve
+      const fnMatch = src.match(/(function\s+installAllMods\s*\(\s*\)\s*\{[^}]*?)(\n\s*\})/);
+      if (fnMatch) {
+        src = src.replace(fnMatch[0], `${fnMatch[1]}\n  registerLoginInjectMod();${fnMatch[2]}`);
+        log('  ✓ appel ajouté dans installAllMods()');
+      } else {
+        warn('impossible de trouver où insérer l\'appel — ajoute registerLoginInjectMod() manuellement');
+      }
     }
+  } else {
+    log('  ✓ appel déjà présent');
   }
-  if (written > 0) console.info('[wildwood] auto-token injecté avant boot:', written, 'clé(s)');
-})();
-`;
-  fs.writeFileSync(USERSCRIPT, body, 'utf8');
-  console.log(`✅ ${USERSCRIPT} créé.`);
-  console.log('   → Glisse le fichier dans le dashboard Tampermonkey pour l\'installer.');
+
+  if (src !== src0) {
+    fs.writeFileSync(INDEX, src, 'utf8');
+    log(`  ✓ ${INDEX} mis à jour`);
+  } else {
+    log('  ✓ aucun changement nécessaire');
+  }
+
+  return /registerLoginInjectMod/.test(src);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Vérification finale
+// ─────────────────────────────────────────────────────────────────────────
+function verify() {
+  log('── Vérification ──');
+  const problems = [];
+
+  if (!fs.existsSync(LOGIN)) problems.push(`${LOGIN} manquant`);
+  else {
+    const c = fs.readFileSync(LOGIN, 'utf8');
+    if (!/registerLoginInjectMod/.test(c)) problems.push(`${LOGIN} : export manquant`);
+    if (!/function isLoginPage/.test(c)) problems.push(`${LOGIN} : isLoginPage manquant`);
+    if (/document\.getElementById\(\s*["']hud["']\s*\)/.test(c))
+      problems.push(`${LOGIN} : réf #hud encore présente`);
+  }
+
+  if (!fs.existsSync(INDEX)) problems.push(`${INDEX} manquant`);
+  else {
+    const c = fs.readFileSync(INDEX, 'utf8');
+    if (!/from\s+["']\.\/misc-login-inject["']/.test(c))
+      problems.push(`${INDEX} : import misc-login-inject manquant`);
+    if (!/\bregisterLoginInjectMod\s*\(\s*\)/.test(c))
+      problems.push(`${INDEX} : appel registerLoginInjectMod() manquant`);
+  }
+
+  if (problems.length === 0) {
+    log('  ✅ Tout est en ordre');
+    return true;
+  }
+  for (const p of problems) warn(p);
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// main
 // ─────────────────────────────────────────────────────────────────────────
 function main() {
-  if (!fs.existsSync('mods') || !fs.existsSync(INDEX_FILE)) {
-    console.error('❌ Lance depuis la racine du repo.');
+  if (!fs.existsSync('mods') || !fs.existsSync(INDEX)) {
+    console.error('❌ Lance depuis la racine du repo (mods/ et mods/index.ts attendus).');
     process.exit(1);
   }
-  patchTokenInjector();
-  removeLoginInject();
-  createUserscript();
-  console.log('');
-  console.log('Prochaines étapes :');
-  console.log('  1. npm run build');
-  console.log('  2. Ctrl+Shift+R');
-  console.log('  3. Console : localStorage.getItem("wildwood-mod-token-injector-pending") doit exister');
-  console.log('  4. Tampermonkey : installer wildwood-auto-token.user.js');
-  console.log('  5. Recharger → token injecté avant boot → pas de login');
-  console.log('');
-  console.log('Si le token est expiré / absent :');
-  console.log('  → login page apparaît → overlay en haut à droite');
-  console.log('  → coller un JSON frais → 📥 Injecter + reload');
-  console.log('  → ou 🎮 Jouer en invité');
+
+  writeLoginFile();
+  fixIndex();
+  const ok = verify();
+
+  log('');
+  if (!ok) {
+    log('❌ Problèmes restants — voir warnings.');
+    process.exit(2);
+  }
+
+  log('Prochaines commandes :');
+  log('  npm run build');
+  log('  git status                      # → mods/misc-login-inject.ts (nouveau)');
+  log('                                  #   mods/index.ts (modifié)');
+  log('  git add -A');
+  log('  git commit -m "fix(login-inject): recreate with #hud-safe isLoginPage()"');
+  log('  git push origin main');
+  log('');
+  log('Test après build :');
+  log('  - login page → overlay flottant haut droite');
+  log('  - console : document.getElementById("wildwood-login-inject-overlay")  → non null');
 }
 
 main();
