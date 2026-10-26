@@ -58,3 +58,5 @@ local-data/**
 # Local agent state and worktrees #
 ##################################
 .claude/
+
+*.bak

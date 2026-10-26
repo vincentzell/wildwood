@@ -83,7 +83,9 @@ function checkToken(): TokenCheck {
 function tryAutoInject(): void {
   if (!isEnabled()) return;
   try {
-    if (sessionStorage.getItem(RELOAD_GUARD) === "1") return;
+    // [patched] TTL 5s au lieu du flag sticky — autorise la réinjection après expiration
+    const _lastAttempt = parseInt(sessionStorage.getItem(RELOAD_GUARD) || "0", 10);
+    if (Date.now() - _lastAttempt < 5000) return;
     const pending = localStorage.getItem(PENDING_KEY);
     if (!pending) return;
     const check = checkToken();
@@ -107,7 +109,7 @@ function tryAutoInject(): void {
     }
     if (written > 0) {
       console.info(`[mod-token-injector] auto-injection ${written} clé(s), reload…`);
-      sessionStorage.setItem(RELOAD_GUARD, "1");
+      sessionStorage.setItem(RELOAD_GUARD, String(Date.now())); // [patched] timestamp
       location.reload();
     }
   } catch { /* idem */ }
@@ -221,7 +223,7 @@ function renderStatus(): HTMLElement {
         coop.continueAsGuest();
       } else {
         const native = document.querySelector<HTMLButtonElement>(
-          "#continueAsGuestBtn, [data-action='continueAsGuest']"
+          "#continueGuestBtn, #continueAsGuestBtn, [data-action='continueAsGuest']"
         );
         if (native) native.click();
         else alert("wildstatCoop.continueAsGuest indisponible");
@@ -251,3 +253,5 @@ export function registerTokenInjectorMod(): void {
     install: () => tryAutoInject(),
   });
 }
+
+// [patched:token-injector-v2]

@@ -209,7 +209,7 @@ function renderStatus(): HTMLElement {
   wrap.append(row);
 
   // Bouton "Continue as Guest" — uniquement visible hors jeu (page de login)
-  const onLoginPage = !document.getElementById("hud");
+  const onLoginPage = isLoginPage(); // [patched] positive signals, pas #hud
   if (onLoginPage) {
     const btnGuest = document.createElement("button");
     btnGuest.textContent = "🎮 Jouer en invité";
@@ -235,6 +235,58 @@ function renderStatus(): HTMLElement {
   return wrap;
 }
 
+
+// ─── [patched:overlay] Login-page overlay ───────────────────────────────
+// Détection par signaux POSITIFS uniquement — jamais #hud (qui est le
+// conteneur de l'app et est visible même sur la page de login).
+function isLoginPage(): boolean {
+  const vis = (el: Element | null): boolean =>
+    !!el && (el as HTMLElement).offsetParent !== null;
+  if (vis(document.getElementById("signInFromStartBtn"))) return true;
+  if (vis(document.getElementById("continueGuestBtn")))   return true;
+  if (vis(document.getElementById("accountChoicePanel"))) return true;
+  return false;
+}
+
+let _overlayMounted = false;
+
+function mountLoginOverlay(): void {
+  if (_overlayMounted) return;
+  if (document.getElementById("wildwood-token-injector-overlay")) return;
+  if (!isLoginPage()) return;
+  _overlayMounted = true;
+
+  const host = document.createElement("div");
+  host.id = "wildwood-token-injector-overlay";
+  host.style.cssText =
+    "position:fixed;top:16px;right:16px;z-index:2147483647;" +
+    "width:320px;max-height:calc(100vh - 32px);overflow:auto;" +
+    "padding:10px;background:rgba(20,20,30,.95);color:#e0e0e0;" +
+    "border:1px solid rgba(255,255,255,.2);border-radius:6px;" +
+    "font-family:system-ui,sans-serif;font-size:11px;" +
+    "box-shadow:0 4px 20px rgba(0,0,0,.5);";
+  host.appendChild(renderStatus());
+  document.body.appendChild(host);
+
+  const obs = new MutationObserver(() => {
+    if (!isLoginPage()) {
+      host.remove();
+      _overlayMounted = false;
+      obs.disconnect();
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+}
+
+function watchLoginPage(): void {
+  if (isLoginPage()) { mountLoginOverlay(); return; }
+  const obs = new MutationObserver(() => {
+    if (isLoginPage()) { mountLoginOverlay(); obs.disconnect(); }
+  });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+  setTimeout(() => obs.disconnect(), 60000);
+}
+
 export function registerTokenInjectorMod(): void {
   REGISTERED_MODS.push({
         id: "misc-token-injector",
@@ -250,7 +302,7 @@ export function registerTokenInjectorMod(): void {
       },
     },
     status: { render: renderStatus, intervalMs: 2000 },
-    install: () => tryAutoInject(),
+    install: () => { tryAutoInject(); watchLoginPage(); },
   });
 }
 
