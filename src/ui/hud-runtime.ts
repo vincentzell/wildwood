@@ -56,6 +56,7 @@ export function createHudRuntime(deps: HudRuntimeDeps) {
     isSupporter: () => (client?.supporterTier?.() ?? "none") !== "none",
     adGemReward: () => client?.adGemReward?.() ?? null,
     claimAdGems: () => client?.claimAdGems?.() ?? Promise.resolve({ ok: false, error: "NOT CONNECTED" }),
+    startAdGems: () => client?.startAdGems?.() ?? Promise.resolve({ ok: false, error: "NOT CONNECTED" }),
     showGemReward: amount => runtimeHud.showGemDrop(amount, "Ad reward"),
     setPromptActive: () => {},
     setAdPlaybackActive: active => {

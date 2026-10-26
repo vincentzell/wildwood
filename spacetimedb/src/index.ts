@@ -18,13 +18,16 @@ import { recordBossGateClear } from "./boss-gates";
 import { playerMultiplayerPreference, writeMultiplayerPreference } from "./multiplayer-preference";
 import { enemyDefeatBudget, playerDefeatClock, playerMapDeparture, acceptEnemyDefeats, permittedDefeatMaps, pruneIdleDefeatBudgets, throttleKillReports, type DefeatClocks, type EnemyDefeatBatch } from "./enemy-defeats";
 import { grantVirtualPlayerConsent, revokeVirtualPlayerConsent } from "./virtual-player-consent";
-import { offlineProgressTables, beginOfflineWindow, grantOfflineProgress, acknowledgeOfflineProgress, setSimulatedTimeAway } from "./offline-progress";
+import { offlineProgressTables, beginOfflineWindow, grantOfflineProgress, collectOfflineProgress, setSimulatedTimeAway } from "./offline-progress";
+import { offlineGatherChoice } from "./offline-gathering";
+import { offlineActivity } from "../../shared/offline-gathering";
 import { playerOfflinePreference, writeOfflinePreference } from "./offline-preference";
 import { playerAudioSetting, writeAudioSettings } from "./audio-settings";
 import { playerIgnoredDrop, writeIgnoredDrops } from "./ignored-drops";
 import { playerLootSetting, writeLootSettings } from "./loot-settings";
 import { playerProfileSnapshot, requireSnapshotForIcon, takeProfileSnapshot } from "./profile-snapshot";
-import { claimAdGemReward, playerAdReward } from "./ad-gem-reward";
+import { claimAdGemReward, playerAdReward, playerAdWatch, startAdWatch } from "./ad-gem-reward";
+import { playerClientHost, recordClientHost } from "./client-host";
 import { playerChatMute, setChatMute } from "./chat-mute";
 import { requireErasureConfirmation } from "./account-erasure";
 import { chatHeartAllowance, chatReactionCooldown, chatReactionSummary, chatReactionUnlock, playerChatHearts, reactionCountsFor, chatReaction, readChatReactions, setChatReaction, grantGemHeartUnlock, isChatModerator, chatModerator, moderatorHeartFor, setChatModerator, removeAccountReactions } from "./chat-reactions";
@@ -1420,7 +1423,7 @@ const spacetimedb = schema({
   playerGemWallet,
   gemTransaction,
   dailyGemBonus,
-  playerAdReward, playerChatMute,
+  playerAdReward, playerAdWatch, playerChatMute, playerClientHost, offlineGatherChoice,
   balanceApologyNotice,
   playerEquipmentLock, playerItemGift, playerBowSkill, playerSwordSkill, playerStaffSkill, playerWornStaffSkill, playerEquipmentCopy, pendingEquipmentOffer, playerIgnoredDrop, playerLootSetting, playerItemRefine, playerCopyRefine, playerOre, playerRefineResult, playerCard, playerGearSlots, playerCopySlots, playerCardDrop, playerCardAttackCap, playerBossCardRoll, playerBuild, playerBuildName, playerWeaponMastery, playerMasteryLevel, playerGold, playerCardMeter, playerCardShopPurchase, playerItemCollection, playerWornSkill, playerMining, playerMinedNode, playerMiningLevel, playerWoodcutting, playerChoppedTree, playerWoodcuttingLevel, playerCraftSkill, playerCraftLevel, playerTool, oldGearPayout, playerStarterWeapon, gemKillDaily, gemLedgerTrim,
   mailboxLetter, mailboxReceipt, playerJoinDate, mailboxEquipment, accountDeletionRequest,
@@ -1763,7 +1766,7 @@ export const devSwapCharacters = spacetimedb.reducer(
 /** What offline-progress.ts needs from this module, wired once. */
 const OFFLINE_GRANT_PORTS = { effectiveStats: effectivePowerStatsForProgress, mapBalance: liveMapBalance,
   statMultiplier: statRewardMultiplierFor, endlessClaimBit: BOSS_REWARD_CLAIM_BITS[PROCEDURAL_ENTRY_BOSS],
-  writeProgress: (ctx: any, progress: any) => writeProgressAndPresentation(ctx, progress) };
+  writeProgress: (ctx: any, progress: any) => writeProgressAndPresentation(ctx, progress), inventoryForProgress };
 
 const cosmeticConversion = createCosmeticConversion({ requireControllingPlayer, activeDuelFor,
   inventoryForProgress, writeProgressAndPresentation, applyGemBalanceChange });
@@ -2329,6 +2332,12 @@ export const registerClientVersion = spacetimedb.reducer(
     writeSessionAnalytics(ctx, session.connectionId, { clientVersion });
   },
 );
+
+/** The host the client was served from, for hosting stats (client-host.ts). */
+export const registerClientHost = spacetimedb.reducer({ host: t.string() }, (ctx, { host }) => {
+  requireSession(ctx);
+  recordClientHost(ctx, host);
+});
 
 export const recordConnectionDiagnostic = spacetimedb.reducer(
   { payload: t.string() },
@@ -3328,6 +3337,12 @@ export const myLegalConsent = spacetimedb.view(
   ctx => { const row = ctx.db.playerLegalConsent.identity.find(ctx.sender); return row ? [row] : []; },
 );
 
+/** The mining and chopping on offer beside the waiting fight summary. */
+export const myOfflineGatherChoice = spacetimedb.view(
+  { name: "my_offline_gather_choice", public: true }, t.array(offlineGatherChoice.rowType),
+  ctx => { const row = ctx.db.offlineGatherChoice.identity.find(ctx.sender); return row ? [row] : []; },
+);
+
 export const myOfflinePreference = spacetimedb.view(
   { name: "my_offline_preference", public: true }, t.array(playerOfflinePreference.rowType),
   ctx => { const row = ctx.db.playerOfflinePreference.identity.find(ctx.sender); return row ? [row] : []; },
@@ -3392,7 +3407,12 @@ export const myAdGemReward = spacetimedb.view(
 /** Ten Gems for a watched ad, thirty minutes apart and four a UTC day. Body: ad-gem-reward.ts. */
 export const claimAdGems = spacetimedb.reducer((ctx) => {
   requireControllingPlayer(ctx);
-  claimAdGemReward(ctx, applyGemBalanceChange);
+  claimAdGemReward(ctx, applyGemBalanceChange, patreonStatus(ctx, ctx.sender).tier !== "none");
+});
+/** An ad starts playing: the claim after it pays only once it has run (ad-gem-reward.ts). */
+export const startAdGems = spacetimedb.reducer((ctx) => {
+  requireControllingPlayer(ctx);
+  startAdWatch(ctx);
 });
 export const myChatMute = spacetimedb.view(
   { name: "my_chat_mute", public: true }, t.array(playerChatMute.rowType),
@@ -3491,10 +3511,18 @@ export const devSetJoinDate = spacetimedb.reducer(
   },
 );
 
-/** The summary has been shown. Nothing else about the window changes. */
+/** The summary has been shown, by a client from before the choice: it collects the fight. */
 export const acknowledgeOfflineSummary = spacetimedb.reducer({}, (ctx) => {
   requireControllingPlayer(ctx);
-  acknowledgeOfflineProgress(ctx, ctx.sender);
+  collectOfflineProgress(ctx, "fight", OFFLINE_GRANT_PORTS);
+});
+
+/** Collects the time away as the fight, the mining or the chopping (offline-progress.ts). */
+export const collectOfflineProgressAs = spacetimedb.reducer({ activity: t.string() }, (ctx, { activity }) => {
+  requireControllingPlayer(ctx);
+  const picked = offlineActivity(activity);
+  if (!picked) throw new SenderError("Pick fight, mine or chop.");
+  collectOfflineProgress(ctx, picked, OFFLINE_GRANT_PORTS);
 });
 
 /**

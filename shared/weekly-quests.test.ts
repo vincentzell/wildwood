@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { WEEKLY_QUEST_COUNT, activeQuestIndices, applyQuestKills, weeklyQuestCandidates, weeklyQuestsFor, guildQuestBonus, soloQuestBonus, parseWeeklyQuests, questDay, questWeek, questWeekEndsAtMs } from "./weekly-quests";
+import { WEEKLY_QUEST_COUNT, activeQuestIndices, applyQuestKills, questKillStat, weeklyQuestCandidates, weeklyQuestsFor, guildQuestBonus, soloQuestBonus, parseWeeklyQuests, questDay, questWeek, questWeekEndsAtMs } from "./weekly-quests";
 import { ENEMY_TYPES } from "./enemy-definitions";
+import { enemyDefeatDefinition } from "./enemy-defeats";
 
 describe("weekly quests", () => {
   const id = "c200aa";
-  it("draws fifteen regular enemies a week, 50 to 100 kills each, the same all week", () => {
+  it("draws fifteen map-and-stat quests a week, 50 to 100 kills each, the same all week", () => {
     const progress = { desertUnlocked: true, snowlandsUnlocked: true };
     const quests = weeklyQuestsFor(id, 2_857, progress);
     expect(quests).toHaveLength(WEEKLY_QUEST_COUNT);
-    // Every enemy comes up once before any repeats.
+    // Every map's stats come up once before any repeats.
     const pool = weeklyQuestCandidates(progress).length;
-    expect(new Set(quests.map(q => `${q.mapId}:${q.enemy}`)).size).toBe(Math.min(pool, WEEKLY_QUEST_COUNT));
+    expect(new Set(quests.map(q => `${q.mapId}:${q.stat}`)).size).toBe(Math.min(pool, WEEKLY_QUEST_COUNT));
     for (const quest of quests) {
       expect(quest.target).toBeGreaterThanOrEqual(50);
       expect(quest.target).toBeLessThanOrEqual(100);
-      expect((ENEMY_TYPES as any)[quest.enemy].elite).toBeFalsy();
+      // A regular enemy on that map gives the stat.
+      expect(Object.keys(ENEMY_TYPES).some(enemy => !(ENEMY_TYPES as any)[enemy].elite && questKillStat(enemy) === quest.stat
+        && enemyDefeatDefinition(quest.mapId, enemy))).toBe(true);
       expect(["tutorial_forest", "beginner_desert", "intermediate_snowlands"]).toContain(quest.mapId);
     }
     expect(weeklyQuestsFor(id, 2_857, progress)).toEqual(quests);
@@ -31,6 +34,20 @@ describe("weekly quests", () => {
     const result = applyQuestKills(quests, "tutorial_forest", [{ enemy: "Spitter", count: 10 }, { enemy: "Brood", count: 10 }]);
     expect(result.quests.map(q => q.progress)).toEqual([10, 10, 0, 0, 0]);
     expect(activeQuestIndices(result.quests)).toEqual([2, 3, 4]);
+  });
+
+  it("counts any enemy giving a stat quest's stat on its map, and keeps an older quest to its one enemy", () => {
+    const forest = Object.keys(ENEMY_TYPES).filter(enemy => enemyDefeatDefinition("tutorial_forest", enemy));
+    const stat = questKillStat(forest[0])!;
+    const giving = forest.filter(enemy => questKillStat(enemy) === stat), other = forest.find(enemy => questKillStat(enemy) !== stat)!;
+    const quests = [{ mapId: "tutorial_forest", stat, target: 50, progress: 0 }, { mapId: "tutorial_forest", enemy: other, target: 50, progress: 0 }];
+    const kills = [...giving.map(enemy => ({ enemy, count: 2 })), { enemy: other, count: 3 }];
+    const result = applyQuestKills(quests, "tutorial_forest", kills);
+    expect(result.quests.map(q => q.progress)).toEqual([2 * giving.length, 3]);
+    // Elsewhere, nothing counts.
+    expect(applyQuestKills(quests, "beginner_desert", kills).quests.map(q => q.progress)).toEqual([0, 0]);
+    // Both kinds read back from storage.
+    expect(parseWeeklyQuests(JSON.stringify(quests))).toEqual(quests);
   });
 
   it("only offers maps the player can reach", () => {

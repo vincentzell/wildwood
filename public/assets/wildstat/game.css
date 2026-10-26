@@ -1,9 +1,9 @@
-  .stat-tracker { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px)); width: max-content; min-width: min(228px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: hidden auto; z-index: 4; pointer-events: auto; background: rgba(24, 24, 24, var(--stat-tracker-bg, .6)); color: var(--text, #f5f5e9); border: var(--hud-border) solid var(--hud-frame); border-color: color-mix(in srgb, var(--hud-frame) calc(var(--stat-tracker-ink, 1) * 100%), transparent); border-radius: var(--hud-radius-small); box-shadow: 0 2px 0 color-mix(in srgb, var(--ui-outline) calc(var(--stat-tracker-ink, 1) * 100%), transparent); outline: var(--hud-border) solid color-mix(in srgb, var(--ui-outline) calc(var(--stat-tracker-ink, 1) * 100%), transparent); outline-offset: -1px; font: 12px/1.3 "Wildstat Chat", sans-serif; font-variant-numeric: tabular-nums; }
+  :is(.stat-tracker, .dps-breakdown) { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px)); width: max-content; min-width: min(228px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: hidden auto; z-index: 4; pointer-events: auto; background: rgba(24, 24, 24, var(--stat-tracker-bg, .6)); color: var(--text, #f5f5e9); border: var(--hud-border) solid var(--hud-frame); border-color: color-mix(in srgb, var(--hud-frame) calc(var(--stat-tracker-ink, 1) * 100%), transparent); border-radius: var(--hud-radius-small); box-shadow: 0 2px 0 color-mix(in srgb, var(--ui-outline) calc(var(--stat-tracker-ink, 1) * 100%), transparent); outline: var(--hud-border) solid color-mix(in srgb, var(--ui-outline) calc(var(--stat-tracker-ink, 1) * 100%), transparent); outline-offset: -1px; font: 12px/1.3 "Wildstat Chat", sans-serif; font-variant-numeric: tabular-nums; }
   /* The slider fades the backdrop to nothing but keeps everything readable:
      text, frame and the slider itself bottom out at a quarter, never at zero. */
-  .stat-tracker > header, .stat-tracker > table, .stat-tracker > footer, .stat-tracker > .stat-tracker-opacity { opacity: var(--stat-tracker-ink, 1); }
+  :is(.stat-tracker, .dps-breakdown) > header, :is(.stat-tracker, .dps-breakdown) > table, :is(.stat-tracker, .dps-breakdown) > footer, :is(.stat-tracker, .dps-breakdown) > .stat-tracker-opacity { opacity: var(--stat-tracker-ink, 1); }
   /* Above HUD controls (5–8), below full-screen windows (10+). */
-  #hud > .stat-tracker { z-index: 6; }
+  #hud > :is(.stat-tracker, .dps-breakdown) { z-index: 6; }
   /* Temporary settings must stay above the floating Auto Farm/Mine/Chop control. */
   #hud > .stat-tracker-settings { z-index: 9; }
   /* Quest tracker: top left under the gem row until dragged. Three quests in play, this map's first and bright. */
@@ -53,23 +53,28 @@
   .quest-tracker-where[hidden] { display: none; }
   .quest-tracker-where { overflow: hidden; color: #e8ece9; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
   .quest-tracker-item.is-here .quest-tracker-where { color: var(--green); }
-  .stat-tracker.is-world-gesture, .stat-tracker.is-world-gesture * { pointer-events: none; }
-  .stat-tracker.is-collapsed { width: max-content; max-width: calc(100vw - 24px); overflow: hidden; }
-  .stat-tracker[hidden], .stat-tracker [hidden] { display: none; }
-  .stat-tracker header, .stat-tracker footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px; }
-  .stat-tracker button { color: inherit; background: transparent; border: 0; margin: 0; padding: 4px 6px; min-height: 32px; font: inherit; cursor: pointer; }
-  .stat-tracker button:active { transform: none; }
-  .stat-tracker .stat-tracker-handle { flex: 1; text-align: left; white-space: nowrap; font-weight: 800; cursor: grab; touch-action: none; }
-  .stat-tracker-handle:active { cursor: grabbing; }
+  :is(.stat-tracker, .dps-breakdown).is-world-gesture, :is(.stat-tracker, .dps-breakdown).is-world-gesture * { pointer-events: none; }
+  :is(.stat-tracker, .dps-breakdown).is-collapsed { width: max-content; max-width: calc(100vw - 24px); overflow: hidden; }
+  :is(.stat-tracker, .dps-breakdown)[hidden], :is(.stat-tracker, .dps-breakdown) [hidden] { display: none; }
+  :is(.stat-tracker, .dps-breakdown) header, :is(.stat-tracker, .dps-breakdown) footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px; }
+  :is(.stat-tracker, .dps-breakdown) button { color: inherit; background: transparent; border: 0; margin: 0; padding: 4px 6px; min-height: 32px; font: inherit; cursor: pointer; }
+  :is(.stat-tracker, .dps-breakdown) button:active { transform: none; }
+  :is(.stat-tracker, .dps-breakdown) :is(.stat-tracker-handle, .dps-breakdown-handle) { flex: 1; text-align: left; white-space: nowrap; font-weight: 800; cursor: grab; touch-action: none; }
+  :is(.stat-tracker-handle, .dps-breakdown-handle):active { cursor: grabbing; }
 
-  .stat-tracker button:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; border-radius: 6px; }
-  .stat-tracker table { width: 100%; border-collapse: collapse; }
-  .stat-tracker th, .stat-tracker td { padding: 3px 6px; text-align: right; white-space: nowrap; }
-  .stat-tracker th:first-child { text-align: left; }
-  .stat-tracker thead { color: var(--muted); font-size: 10px; }
-  .stat-tracker tbody tr { border-top: 1px solid var(--border); }
+  :is(.stat-tracker, .dps-breakdown) button:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; border-radius: 6px; }
+  :is(.stat-tracker, .dps-breakdown) table { width: 100%; border-collapse: collapse; }
+  :is(.stat-tracker, .dps-breakdown) th, :is(.stat-tracker, .dps-breakdown) td { padding: 3px 6px; text-align: right; white-space: nowrap; }
+  :is(.stat-tracker, .dps-breakdown) th:first-child { text-align: left; }
+  :is(.stat-tracker, .dps-breakdown) thead { color: var(--muted); font-size: 10px; }
+  :is(.stat-tracker, .dps-breakdown) tbody tr { border-top: 1px solid var(--border); }
   .stat-tracker .positive { color: var(--green); }
   .stat-tracker .negative { color: var(--red); }
+  /* DPS breakdown: the stat tracker's card, right side above it until dragged; each row's backdrop fills to its share. */
+  .dps-breakdown { bottom: auto; top: calc(var(--hud-safe-top) + var(--player-hud-visual-height) + 120px); min-width: min(200px, calc(100vw - 24px)); }
+  .dps-breakdown tbody tr { background: linear-gradient(90deg, rgba(255, 255, 255, .14) var(--share, 0%), transparent var(--share, 0%)); }
+  .dps-breakdown footer { min-height: 26px; color: var(--muted); }
+  .dps-breakdown-empty { max-width: 200px; margin: 0; padding: 2px 8px 8px; color: var(--muted); opacity: var(--stat-tracker-ink, 1); }
   .stat-tracker-opacity { display: block; margin: 0 8px 7px; }
   .stat-tracker-opacity input { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: none; cursor: pointer; }
   .stat-tracker-opacity input::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--border); }
@@ -92,8 +97,8 @@
   .stat-tracker-settings input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--green); cursor: pointer; }
   .stat-tracker:not(.stat-tracker-settings).is-compact { min-width: 0; width: max-content; font-size: 12px; }
   .stat-tracker-stat-icon { display: block; width: 16px; height: 16px; }
-  .is-position-locked .stat-tracker-handle, .mysterious-ore-timer.is-position-locked .mysterious-ore-timer-handle { cursor: default; }
-  .is-position-locked .stat-tracker-handle::after, .is-position-locked .mysterious-ore-timer-handle::after { content: ""; display: inline-block; width: 10px; height: 12px; margin-left: 5px; vertical-align: -1px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M2 6V4a4 4 0 0 1 8 0v2h1v10H1V6zm2 0h4V4a2 2 0 0 0-4 0z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .is-position-locked :is(.stat-tracker-handle, .dps-breakdown-handle), .mysterious-ore-timer.is-position-locked .mysterious-ore-timer-handle { cursor: default; }
+  .is-position-locked :is(.stat-tracker-handle, .dps-breakdown-handle)::after, .is-position-locked .mysterious-ore-timer-handle::after { content: ""; display: inline-block; width: 10px; height: 12px; margin-left: 5px; vertical-align: -1px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M2 6V4a4 4 0 0 1 8 0v2h1v10H1V6zm2 0h4V4a2 2 0 0 0-4 0z'/%3E%3C/svg%3E") center / contain no-repeat; }
   .stat-tracker.is-compact header { gap: 4px; padding: 0 4px; }
   .stat-tracker.is-compact .stat-tracker-time { color: var(--muted); white-space: nowrap; }
   .stat-tracker.is-compact.is-collapsed .stat-tracker-time { display: none; }
@@ -103,15 +108,15 @@
   .stat-tracker-settings .stat-tracker-compact-options label { min-height: 28px; margin: 0; }
   .stat-tracker-settings > .stat-tracker-reset { margin: 6px 10px 0; }
   .stat-tracker-prestige-reset { margin: 0 10px; padding-top: 6px; border-top: 1px solid var(--border); }
-  @media (any-pointer: coarse) { .stat-tracker:not(.is-collapsed) button { min-height: 44px; } }
+  @media (any-pointer: coarse) { :is(.stat-tracker, .dps-breakdown):not(.is-collapsed) button { min-height: 44px; } }
   /* Folded, it is one row the size of the folded quest tracker, not a tall touch block. */
-  .stat-tracker.is-collapsed { min-width: 0; border-radius: var(--hud-radius-small); font: 700 13px/1.25 "Wildstat Chat", sans-serif; }
-  .stat-tracker.is-collapsed header { padding: 0; }
+  :is(.stat-tracker, .dps-breakdown).is-collapsed { min-width: 0; border-radius: var(--hud-radius-small); font: 700 13px/1.25 "Wildstat Chat", sans-serif; }
+  :is(.stat-tracker, .dps-breakdown).is-collapsed header { padding: 0; }
   /* Minimized, it stands as tall as the gem and mail row beside it, border and all. */
-  .stat-tracker.is-collapsed { box-sizing: border-box; height: 30px; }
-  .stat-tracker.is-collapsed header { height: 100%; }
-  .stat-tracker.is-collapsed .stat-tracker-handle { box-sizing: border-box; height: 100%; min-height: 0; padding: 0 8px; border: 0; }
-  @media (max-width: 380px) { .stat-tracker { font-size: 11px; } .stat-tracker th, .stat-tracker td { padding: 3px 5px; } }
+  :is(.stat-tracker, .dps-breakdown).is-collapsed { box-sizing: border-box; height: 30px; }
+  :is(.stat-tracker, .dps-breakdown).is-collapsed header { height: 100%; }
+  :is(.stat-tracker, .dps-breakdown).is-collapsed :is(.stat-tracker-handle, .dps-breakdown-handle) { box-sizing: border-box; height: 100%; min-height: 0; padding: 0 8px; border: 0; }
+  @media (max-width: 380px) { :is(.stat-tracker, .dps-breakdown) { font-size: 11px; } :is(.stat-tracker, .dps-breakdown) th, :is(.stat-tracker, .dps-breakdown) td { padding: 3px 5px; } }
 
   @font-face {
     font-family: "Wildstat Chat";
@@ -392,6 +397,8 @@
   #townBtn.is-town-cooldown .toolbar-icon { visibility: hidden; }
   .inventory-notice { position: absolute; top: 12%; left: calc(50% + 8px); width: 8px; height: 8px; border: 1px solid #fff; border-radius: 50%; background: #e63d3d; box-shadow: 0 1px 0 var(--ui-outline); pointer-events: none; }
   .inventory-notice[hidden] { display: none; }
+  /* A card effect's "[40%×3]": one card's share times the copies, dimmed so the total reads first. */
+  .card-effect-stack { opacity: .6; }
   /* Join requests waiting, for the guild's President and Vice President; the Guilds button uses the Inventory's dot. */
   .guild-request-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border: 1px solid #fff; border-radius: 50%; background: #e63d3d; box-shadow: 0 1px 0 var(--ui-outline); pointer-events: none; }
   .guild-request-dot[hidden] { display: none; }
@@ -4735,6 +4742,16 @@
 .offline-progress-row[data-stat-kind="regen"] { --offline-stat-color: var(--stat-regen); }
 .offline-progress-row[data-stat-kind="attack"] { --offline-stat-color: #ffe05d; }
 .offline-progress-note { margin: 14px 0; color: #9fa89b; font-size: 11px; line-height: 1.45; }
+.offline-choices { display: grid; gap: 10px; margin: 14px 0 0; }
+.offline-choices:empty { display: none; }
+.offline-choice { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: rgba(0,0,0,.25); text-align: left; }
+.offline-choice-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.offline-choice-title { color: #eef1ee; font-size: 15px; font-weight: 900; }
+.offline-choice-detail { color: #c9cfc9; font-size: 13px; text-align: right; }
+.offline-choice .offline-progress-stats { gap: 0; margin: 0; }
+.offline-choice .offline-progress-row { padding: 3px 2px; border: 0; border-radius: 0; background: none; font-size: 13px; }
+.offline-choice-collect { justify-self: center; width: min(160px, 100%); border-color: #18371b; background: linear-gradient(#63ad5c, #347536); box-shadow: 0 3px 0 #18371b; }
+.offline-choice-collect:disabled { border-color: #2d2d2d; background: #3e3e3e; box-shadow: none; color: rgba(236,240,236,.62); }
 
 /* The game's own yes/no prompt, in the frame every other window uses. It is
    always raised from another window, so it clears every one of them: the item

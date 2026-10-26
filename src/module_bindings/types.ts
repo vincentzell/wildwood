@@ -1139,6 +1139,9 @@ export type MyMinedNodes = __Infer<typeof MyMinedNodes>;
 export const MyMining = __t.object("MyMining", {});
 export type MyMining = __Infer<typeof MyMining>;
 
+export const MyOfflineGatherChoice = __t.object("MyOfflineGatherChoice", {});
+export type MyOfflineGatherChoice = __Infer<typeof MyOfflineGatherChoice>;
+
 export const MyOfflinePreference = __t.object("MyOfflinePreference", {});
 export type MyOfflinePreference = __Infer<typeof MyOfflinePreference>;
 
@@ -1215,6 +1218,18 @@ export const NameChangeStatus = __t.object("NameChangeStatus", {
   balance: __t.f64(),
 });
 export type NameChangeStatus = __Infer<typeof NameChangeStatus>;
+
+export const OfflineGatherChoice = __t.object("OfflineGatherChoice", {
+  identity: __t.identity(),
+  grantedAtMicros: __t.u64(),
+  rocks: __t.u32(),
+  miningGain: __t.u32(),
+  mineOres: __t.string(),
+  trees: __t.u32(),
+  woodcuttingGain: __t.u32(),
+  chopOres: __t.string(),
+});
+export type OfflineGatherChoice = __Infer<typeof OfflineGatherChoice>;
 
 export const OfflineProgress = __t.object("OfflineProgress", {
   identity: __t.identity(),
@@ -1410,6 +1425,12 @@ export const PlayerAdReward = __t.object("PlayerAdReward", {
 });
 export type PlayerAdReward = __Infer<typeof PlayerAdReward>;
 
+export const PlayerAdWatch = __t.object("PlayerAdWatch", {
+  identity: __t.identity(),
+  startedAt: __t.timestamp(),
+});
+export type PlayerAdWatch = __Infer<typeof PlayerAdWatch>;
+
 export const PlayerAggroChallenge = __t.object("PlayerAggroChallenge", {
   identity: __t.identity(),
   active: __t.bool(),
@@ -1557,6 +1578,15 @@ export const PlayerChoppedTree = __t.object("PlayerChoppedTree", {
   choppedAt: __t.timestamp(),
 });
 export type PlayerChoppedTree = __Infer<typeof PlayerChoppedTree>;
+
+export const PlayerClientHost = __t.object("PlayerClientHost", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  host: __t.string(),
+  firstSeenAt: __t.timestamp(),
+  lastSeenAt: __t.timestamp(),
+});
+export type PlayerClientHost = __Infer<typeof PlayerClientHost>;
 
 export const PlayerCombatRating = __t.object("PlayerCombatRating", {
   identity: __t.identity(),

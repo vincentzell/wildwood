@@ -4,6 +4,7 @@ import { CARD_SLOT_NAMES, cardEffectText, cardName, cardOrigin } from "../../sha
 import { REFINE_ORES, type OreId } from "../../shared/refine";
 import { REFINE_ORE_ORDER } from "../../shared/ore-bag";
 import { cardTile } from "./cards-tab";
+import { fillCardEffect } from "./card-effect-line";
 
 type Result = { ok: boolean; error?: string } | undefined;
 type Ores = Readonly<Partial<Record<OreId, number>>>;
@@ -82,7 +83,7 @@ export function createCardSellerController(deps: {
     effects.className = "smith-card-effects card-seller-effects";
     for (const effect of card.effects) {
       const line = document.createElement("li");
-      line.textContent = cardEffectText(effect);
+      fillCardEffect(line, cardEffectText(effect));
       if (effect.value < 0) line.className = "is-cost";
       effects.append(line);
     }

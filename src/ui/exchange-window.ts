@@ -117,12 +117,12 @@ export function createExchangeController(deps: ExchangeDeps) {
   const best = (itemId: string, buy: boolean) => (buy ? priceOf(itemId)?.highestBid : priceOf(itemId)?.lowestAsk) ?? null;
   const last = (itemId: string) => priceOf(itemId)?.lastPrice ?? null;
 
-  async function act(run: () => Promise<ExchangeResult>, done: string, after: Screen = { kind: "slots" }) {
+  async function act(run: () => Promise<ExchangeResult>, done: string | (() => string), after: Screen = { kind: "slots" }) {
     if (busy) return;
     busy = true; render(true);
     try {
       const result = await run();
-      deps.showMessage(result.ok ? done : result.error ?? "Not Connected", result.ok ? "#ffd75e" : "#ff9b91");
+      deps.showMessage(result.ok ? (typeof done === "string" ? done : done()) : result.error ?? "Not Connected", result.ok ? "#ffd75e" : "#ff9b91");
       if (result.ok) screen = after;
     } finally { busy = false; if (dialog.open) render(true); }
   }
@@ -403,7 +403,17 @@ export function createExchangeController(deps: ExchangeDeps) {
         const yes = await gameConfirm({ message: `Put ${itemName(draft.itemId)}${draft.refine ? ` ★${draft.refine}` : ""} on sale?`, confirmLabel: "Put on Sale",
           details: [{ label: "Price", value: `${draft.price.toLocaleString("en-US")} Gold` }, { label: "You Get", value: `${(draft.price - draft.price * EXCHANGE_FEE_PERCENT / 100n).toLocaleString("en-US")} Gold` }] });
         if (yes) await act(() => deps.list(draft.itemId, draft.copyId!, draft.price), "On sale");
-      } else await act(() => deps.place(draft.buy, draft.itemId, draft.quantity, draft.price), draft.buy ? "Offer placed" : "On sale");
+      } else {
+        // Says what happened: an offer can trade in full the moment it goes up, and then never shows in a slot.
+        const before = new Set(myOffers().map(offer => String(offer.id))), quantity = draft.quantity, buy = draft.buy;
+        await act(() => deps.place(buy, draft.itemId, quantity, draft.price), () => {
+          const placed = myOffers().find(offer => !before.has(String(offer.id)));
+          const traded = placed ? placed.filled : quantity, left = quantity - traded, amount = traded.toLocaleString("en-US");
+          if (!traded) return buy ? "Offer placed" : "On sale";
+          if (!left) return buy ? `Bought ${amount} · in your bag` : `Sold ${amount} · the gold is yours`;
+          return buy ? `Bought ${amount} · ${left.toLocaleString("en-US")} waiting` : `Sold ${amount} · ${left.toLocaleString("en-US")} on sale`;
+        });
+      }
     });
     updateTotal();
     parts.push(total, timing, confirm);

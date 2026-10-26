@@ -16,6 +16,8 @@ import { addGold } from "./gold";
 import { GRADE_GOLD_PRICE } from "../../shared/gear-grades";
 import { craftKey, craftSkillExperience } from "./crafting";
 import { inventoryForProgress } from "./progress-helpers";
+import { toolKey } from "./tools";
+import { CRAFT_TOOL, toolCraftCost } from "../../shared/tools";
 vi.mock("spacetimedb/server", () => import("../../tests/helpers/spacetime-module"));
 
 type Station = "smith" | "archery" | "sorcery" | "swordplay";
@@ -121,5 +123,21 @@ describe("crafted weapon skills", () => {
     f.craft("crude_bow");
     const roll = f.db.playerBowSkill.key.find(`${f.ctx.sender.toHexString()}:crude_bow`);
     expect([roll.arrowStorm, roll.ricochet, roll.piercingShot].every(chance => chance > 0)).toBe(true);
+  });
+});
+
+describe("a craft tool", () => {
+  it("lets a craft start with only what the tool leaves of the recipe in the bag", () => {
+    const itemId = "eternal_bow", recipe = gradeCraftMaterials(itemId)!;
+    const f = crafter("archery", { crafts: { fletching: 99 }, stock: 0 });
+    const need = toolCraftCost(recipe, 10);
+    // Exactly the tool's cost in the bag, and a knife at 10: a quarter of each material is saved.
+    f.transaction(() => { for (const [id, count] of Object.entries(need)) addOres(f.ctx, f.ctx.sender, id as OreId, count); });
+    Object.assign(f.ctx, { random: Object.assign(() => .999, { integerInRange: (_min: number, max: number) => max }) });
+    expect(() => f.craft(itemId)).toThrow(/You need/);
+    f.seed("playerTool", { key: toolKey(f.ctx.sender, CRAFT_TOOL.fletching), identity: f.ctx.sender, tool: CRAFT_TOOL.fletching, level: 10 });
+    f.craft(itemId);
+    expect(Object.values(recipe).some((count, index) => need[Object.keys(recipe)[index]] < count)).toBe(true);
+    for (const id of Object.keys(recipe)) expect(f.ore(id)).toBe(0);
   });
 });

@@ -602,6 +602,16 @@
       "lastNodeId:u32",
       "lastStarshard:bool"
     ],
+    "my_offline_gather_choice": [
+      "identity:identity",
+      "grantedAtMicros:u64",
+      "rocks:u32",
+      "miningGain:u32",
+      "mineOres:string",
+      "trees:u32",
+      "woodcuttingGain:u32",
+      "chopOres:string"
+    ],
     "my_offline_preference": [
       "identity:identity",
       "enabled:bool"

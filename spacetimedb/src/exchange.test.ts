@@ -54,12 +54,15 @@ describe("Trade Chrysanthemum resources", () => {
     expect(left).toMatchObject({ buy: false, quantity: 50, filled: 20 });
     // The price line browsing reads: 30 left at 10, last traded at 10.
     expect(f.db.exchangePrice.itemId.find("copper_ore")).toMatchObject({ lowestAsk: 10n, highestBid: 0n, forSale: 30, lastPrice: 10n });
-    // No letter for a part; one when the last 30 complete it.
-    const letters = () => [...f.db.playerMail.iter()].map((mail: any) => [mail.identity.toHexString(), mail.title]).sort();
-    expect(letters()).toEqual([]);
+    // The buyer's offer traded in full as it went up: a letter says so, at the 200 it cost, not the 300 set aside.
+    // The seller's, only part filled, gets none yet.
+    const letters = (who: typeof SELLER) => [...f.db.playerMail.iter()].filter((mail: any) => mail.identity.toHexString() === who.toHexString());
+    expect(letters(SELLER)).toEqual([]);
+    expect(letters(BUYER).map((mail: any) => mail.body)).toEqual([expect.stringContaining("for 200 Gold")]);
     f.run(server.placeExchangeOffer, { buy: true, itemId: "copper_ore", quantity: 10, price: 10n });
     f.run(server.placeExchangeOffer, { buy: true, itemId: "copper_ore", quantity: 20, price: 10n });
-    expect(letters()).toEqual([[SELLER.toHexString(), "Trade Chrysanthemum: Offer Complete"]]);
+    // The last 30 complete the seller's: one letter, never one a fill.
+    expect(letters(SELLER)).toHaveLength(1);
   });
 
   it("gives back what is left on cancel: gold for a buy, the resources for a sale", () => {

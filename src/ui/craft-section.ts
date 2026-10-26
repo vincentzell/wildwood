@@ -18,6 +18,7 @@ import { refineStars } from "./refine-badge";
 import { oreIconSource } from "./ore-icon";
 import { formatCompactNumber } from "./number-format";
 import type { StationTile } from "./station-grid";
+import { CRAFT_TOOL, toolCraftCost, type ToolId } from "../../shared/tools";
 
 type Result = { ok: boolean; error?: string } | undefined;
 type Ores = Readonly<Partial<Record<OreId, number>>>;
@@ -127,6 +128,8 @@ export type HeldWeapon = { itemId: string; copyId: bigint; equipped: boolean; ro
 
 export type CraftSectionDeps = {
   craftSkills: () => Readonly<Partial<Record<CraftSkill, bigint>>>;
+  /** The craft tool's level for a craft: the bag needs only what it leaves of a recipe. */
+  craftToolLevel?: (skill: CraftSkill) => number;
   ores: () => Ores;
   masteryLevels: () => MasteryLevels;
   bagFull: () => boolean;
@@ -184,12 +187,14 @@ export function createCraftSection(deps: CraftSectionDeps, options: { onChange?:
   }
 
   const skillLevel = (skill: CraftSkill) => craftProgress(deps.craftSkills()[skill] ?? 0n).level;
+  // What a craft or Reforge takes from the bag: the recipe less what the craft's tool always saves.
+  const costOf = (itemId: GradeItemId) => toolCraftCost(gradeCraftMaterials(itemId)!, deps.craftToolLevel?.(gradeCraftSkill(itemId)!) ?? 0);
 
   /** A line's piece at the grade picked (or the best open), what it takes, and whether it can be made now. */
   function craftOffer(line: GradeShopLine) {
     const skill = lineCraftSkill(line), offer = gradeCraftOffer(line, skillLevel(skill)), choice = picked.get(gradeShopLineKey(line));
     const grade = choice && offer.grades.includes(choice) ? choice : offer.grade, itemId = gradeShopItemId(line, grade);
-    const materials = gradeCraftMaterials(itemId)!, lacking = craftMaterialsShort(materials, deps.ores()).length > 0;
+    const materials = costOf(itemId), lacking = craftMaterialsShort(materials, deps.ores()).length > 0;
     return { skill, offer, grade, itemId, materials, lacking, ready: !lacking && !deps.bagFull() };
   }
 
@@ -225,7 +230,7 @@ export function createCraftSection(deps: CraftSectionDeps, options: { onChange?:
     const ores = deps.ores();
     return reforgeable().map(weapon => {
       const itemId = weapon.itemId as GradeItemId;
-      const ready = skillLevel(gradeCraftSkill(itemId)!) >= gradeCraftLevel(itemId) && !craftMaterialsShort(gradeCraftMaterials(itemId)!, ores).length;
+      const ready = skillLevel(gradeCraftSkill(itemId)!) >= gradeCraftLevel(itemId) && !craftMaterialsShort(costOf(itemId), ores).length;
       return {
         key: copyKey(weapon), itemId, copyId: weapon.copyId, refine: deps.refineLevel(itemId, weapon.copyId),
         badge: weapon.equipped ? "Worn" : undefined, waits: !ready,
@@ -241,7 +246,7 @@ export function createCraftSection(deps: CraftSectionDeps, options: { onChange?:
     const weapon = reforgeable().find(each => copyKey(each) === key);
     if (!weapon) return null;
     const ores = deps.ores();
-    const itemId = weapon.itemId as GradeItemId, skill = gradeCraftSkill(itemId)!, materials = gradeCraftMaterials(itemId)!;
+    const itemId = weapon.itemId as GradeItemId, skill = gradeCraftSkill(itemId)!, materials = costOf(itemId);
     const levelMet = skillLevel(skill) >= gradeCraftLevel(itemId), lacking = craftMaterialsShort(materials, ores).length > 0;
     const made = gradeItemRow(itemId, deps.refineLevel(itemId, weapon.copyId), levelMet ? [] : [{ text: `Needs ${gradeCraftNeed(itemId)}`, met: false }]);
     made.row.dataset.copyId = String(weapon.copyId);
@@ -360,6 +365,7 @@ function hint(text: string, className = "craft-hint") {
 /** What the Smith's crafting reads from the coop session. */
 export type CraftCoop = {
   craftSkills?: () => Readonly<Record<CraftSkill, bigint>>;
+  toolLevel?: (tool: ToolId) => number;
   craftGradeItem?: (itemId: string) => Promise<Result>;
   reforgeWeapon?: (itemId: string, copyId: bigint) => Promise<Result>;
   itemRefine?: (itemId: string, copyId?: bigint) => number;
@@ -398,6 +404,7 @@ export function heldWeaponsFor(coop: CraftCoop | null | undefined, inventory: Cr
 export function craftDepsFor(coop: () => CraftCoop | null | undefined, inventory: CraftInventory, showMessage: CraftSectionDeps["showMessage"]): CraftSectionDeps {
   return {
     craftSkills: () => coop()?.craftSkills?.() ?? {},
+    craftToolLevel: skill => coop()?.toolLevel?.(CRAFT_TOOL[skill]) ?? 0,
     ores: () => coop()?.ores?.() ?? {},
     masteryLevels: () => masteryLevels(coop()?.weaponMastery?.() ?? {}),
     bagFull: () => bagFullFor(coop(), inventory),

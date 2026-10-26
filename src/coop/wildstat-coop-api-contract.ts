@@ -115,6 +115,7 @@ type ExpectedApiKey =
   | "claimDailyGemBonus"
   | "adGemReward"
   | "claimAdGems"
+  | "startAdGems"
   | "chatMute"
   | "soulStats"
   | "soulLevel"

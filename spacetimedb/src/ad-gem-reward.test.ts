@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { ConnectionId, Timestamp } from "spacetimedb";
 import { crystalFixture, identity, server } from "../../tests/helpers/crystal-hollows-fixture";
 import { eraseIdentityRows } from "./account-erasure";
-import { AD_GEM_COOLDOWN_MS, AD_GEM_DAILY_LIMIT, AD_GEM_REWARD, utcDayKey } from "../../shared/ad-gem-reward";
+import { AD_GEM_COOLDOWN_MS, AD_GEM_DAILY_LIMIT, AD_GEM_REWARD, AD_WATCH_MIN_SECONDS, utcDayKey } from "../../shared/ad-gem-reward";
 import { ATTACK_BALANCE_VERSION, PROTOCOL_VERSION, SPACETIME_AUTH_CLIENT_ID, SPACETIME_AUTH_ISSUER } from "../../shared/rules";
 vi.mock("spacetimedb/server", () => import("../../tests/helpers/spacetime-module"));
 
@@ -15,7 +15,11 @@ const NOON = 20_000 * DAY_MS + 12 * 60 * MINUTE_MS;
 const at = (f: Fixture, ms: number) => { f.ctx.timestamp = new Timestamp(BigInt(ms) * 1000n); };
 const balance = (f: Fixture, who = f.ctx.sender) => f.db.playerGemWallet.identity.find(who)?.balance ?? 0n;
 const row = (f: Fixture, who = f.ctx.sender) => f.db.playerAdReward.identity.find(who);
-const claim = (f: Fixture) => f.run(server.claimAdGems);
+/** The shortest ad that pays. */
+const WATCH_MS = AD_WATCH_MIN_SECONDS * 1000;
+const nowMs = (f: Fixture) => Number(f.ctx.timestamp.microsSinceUnixEpoch / 1000n);
+/** Watches an ad from now and claims as it ends: refusals come from starting it. */
+const claim = (f: Fixture) => { f.run(server.startAdGems); at(f, nowMs(f) + WATCH_MS); f.run(server.claimAdGems); };
 
 it("pays 10 Gems, refuses inside thirty minutes, and pays again after", () => {
   const f = crystalFixture();
@@ -28,13 +32,13 @@ it("pays 10 Gems, refuses inside thirty minutes, and pays again after", () => {
   expect(ledger).toHaveLength(1);
   expect(ledger[0]).toMatchObject({ delta: 10n, balanceAfter: 10n });
 
-  at(f, NOON + 17 * MINUTE_MS + 26_000);
+  at(f, NOON + WATCH_MS + 17 * MINUTE_MS + 26_000);
   expect(() => claim(f)).toThrow("Next ad in 12:34");
   expect(balance(f)).toBe(10n);
-  at(f, NOON + AD_GEM_COOLDOWN_MS - 1);
+  at(f, NOON + WATCH_MS + AD_GEM_COOLDOWN_MS - 1);
   expect(() => claim(f)).toThrow("Next ad in 0:01");
 
-  at(f, NOON + AD_GEM_COOLDOWN_MS);
+  at(f, NOON + WATCH_MS + AD_GEM_COOLDOWN_MS);
   claim(f);
   expect(balance(f)).toBe(20n);
   expect(row(f)).toMatchObject({ claimsToday: 2 });
@@ -43,7 +47,7 @@ it("pays 10 Gems, refuses inside thirty minutes, and pays again after", () => {
 it("pays four a day thirty minutes apart, refuses the fifth, and pays again after the UTC reset", () => {
   const f = crystalFixture();
   for (let index = 0; index < AD_GEM_DAILY_LIMIT; index += 1) {
-    at(f, NOON + index * AD_GEM_COOLDOWN_MS);
+    at(f, NOON + index * (AD_GEM_COOLDOWN_MS + WATCH_MS));
     claim(f);
   }
   expect(balance(f)).toBe(40n);
@@ -70,9 +74,9 @@ it("keeps the thirty minutes across midnight: a new day brings claims, not an ea
   const midnight = (Math.floor(NOON / DAY_MS) + 1) * DAY_MS;
   at(f, midnight - 10 * MINUTE_MS);
   claim(f);
-  at(f, midnight + 5 * MINUTE_MS);
+  at(f, midnight + 5 * MINUTE_MS + WATCH_MS);
   expect(() => claim(f)).toThrow("Next ad in 15:00");
-  at(f, midnight + 20 * MINUTE_MS);
+  at(f, midnight + 20 * MINUTE_MS + WATCH_MS);
   claim(f);
   expect(row(f)).toMatchObject({ dayKey: utcDayKey(midnight), claimsToday: 1 });
 });
@@ -95,7 +99,7 @@ it("keeps each account's claims to itself", () => {
   expect(balance(f, second)).toBe(10n);
   expect(row(f, first)).toMatchObject({ claimsToday: 1 });
   expect(row(f, second)).toMatchObject({ claimsToday: 1 });
-  at(f, NOON + MINUTE_MS);
+  at(f, NOON + 2 * WATCH_MS + MINUTE_MS);
   expect(() => claim(f)).toThrow("Next ad in 29:00");
 });
 
@@ -175,3 +179,29 @@ it("is erased with the account and leaves other accounts alone", () => {
   expect(row(f, other)).not.toBeNull();
 });
 
+
+it("pays only for an ad the server saw start and run; a supporter's tap needs none", () => {
+  const f = crystalFixture();
+  at(f, NOON);
+  // No ad started: nothing paid, nothing refused, nothing recorded.
+  f.run(server.claimAdGems);
+  expect(balance(f)).toBe(0n);
+  expect(row(f)).toBeNull();
+  // Claimed before the ad could have finished: refused, and the ad still counts once it has.
+  f.run(server.startAdGems);
+  at(f, NOON + WATCH_MS - 1);
+  expect(() => f.run(server.claimAdGems)).toThrow("Finish the ad first.");
+  at(f, NOON + WATCH_MS);
+  f.run(server.claimAdGems);
+  expect(balance(f)).toBe(BigInt(AD_GEM_REWARD));
+  // That ad is spent: claiming again with no new one pays nothing.
+  at(f, NOON + WATCH_MS + AD_GEM_COOLDOWN_MS);
+  f.run(server.claimAdGems);
+  expect(balance(f)).toBe(BigInt(AD_GEM_REWARD));
+  // A Patreon supporter skips the ad, not the limits.
+  f.seed("patreonLink", { identity: f.ctx.sender, userId: "u", accessToken: "", refreshToken: "", tier: "silver", frame: "none",
+    validUntilMs: NOON + 10 * DAY_MS, checkedAtMs: NOON, attemptedAtMs: NOON });
+  f.run(server.claimAdGems);
+  expect(balance(f)).toBe(BigInt(2 * AD_GEM_REWARD));
+  expect(() => f.run(server.claimAdGems)).toThrow(/^Next ad in/);
+});

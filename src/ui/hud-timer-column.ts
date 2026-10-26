@@ -13,6 +13,7 @@ type Dependencies = {
   isSupporter: () => boolean;
   adGemReward: () => AdGemRewardRecord | null;
   claimAdGems: () => Promise<{ ok: boolean; error?: string }>;
+  startAdGems?: () => Promise<{ ok: boolean; error?: string }>;
   showGemReward: (amount: number) => void;
   setPromptActive: (active: boolean) => void;
   setAdPlaybackActive: (active: boolean) => void;

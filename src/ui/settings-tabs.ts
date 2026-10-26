@@ -7,7 +7,7 @@ type SettingsSection = { title?: string; expandable?: boolean; description?: str
 /** Game's long list is split into headed sections; the other tabs are one section each. */
 const SETTINGS_GROUPS: readonly { id: string; label: string; sections: readonly SettingsSection[] }[] = [
   { id: "game", label: "Game", sections: [
-    { title: "Display & HUD", expandable: true, description: "Combat · Trackers · Timers & hints", selectors: ["#attackRangeToggle", "#enemyHpNumbersToggle", "#damageNumbersToggle", "#statPopupsToggle", "#baseStatRewardsToggle", "#cardFoundPopupsToggle", "#scientificNotationToggle", "#cameraZoomToggle", "#statTrackerToggle", "#questTrackerToggle", "#gameTickerToggle"] },
+    { title: "Display & HUD", expandable: true, description: "Combat · Trackers · Timers & hints", selectors: ["#attackRangeToggle", "#enemyHpNumbersToggle", "#damageNumbersToggle", "#statPopupsToggle", "#baseStatRewardsToggle", "#cardFoundPopupsToggle", "#scientificNotationToggle", "#cameraZoomToggle", "#statTrackerToggle", "#dpsBreakdownToggle", "#questTrackerToggle", "#gameTickerToggle"] },
     { title: "Players & Social", expandable: true, description: "Players · Names · Chat", selectors: ["#remoteGhostsToggle", "#ownNamePlateToggle", "#guildTagsToggle", "#chatToggle", "#chatTimestampsToggle"] },
     { title: "Device & Performance", expandable: true, description: "Device · Graphics · Diagnostics", selectors: ["#toolbarHapticsToggle", "#selfProfileTapToggle", "#fullscreenToggle", "#keepScreenOnToggle", "#highResolutionToggle", "#lowPerformanceToggle", "#idleThrottleToggle", "#webglWorldToggle", "#dedicatedGpuToggle", "#fpsToggle", "#dpsToggle", "#latencyToggle", "#graphicsInfo"] },
     { selectors: ["#replayTutorialRow"] },

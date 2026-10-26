@@ -19,6 +19,8 @@ Picked by URL hash in `visual-check.html`:
 | `parts` | The parts-built enemies (goblins, skeletons, slimes …) facing right and left, aiming up-right, down-right and up-left, hit, and dying |
 | `combat-hits` | Damage numbers over a crowd at the phone framing (white dealt, yellow crits, red taken, a burst fanned out) as they rise, fade and go; each weapon's projectile and an enemy shot; bow, sword and staff skill effects partway through |
 | `bosses` | Every world boss through the game's boss renderer: idle at 0, 0.25 and 0.5 s, mid-attack, hit with the bar's loss flash, and its hitbox and anchor over the art |
+| `endless-bosses` | Each Endless enemy beside its boss (twice its size), hitbox circles over both |
+| `dps-breakdown` | The DPS breakdown card over a bow build with Koi and Dragon, at phone and desktop width |
 | `world` | Every campaign map, the first Endless map, the Soul Dimension and a guild hall where a player arrives, drawn by the game's own world renderer at the phone framing (ground, roads, decor, portals and their labels, camps, the minimap, the Night Forest's dark); players at a gate and at a boss for depth order; the Forest and the Night Forest at the desktop framing |
 | `town` | The Town at the phone framing: the arrival, the same with attack-range research (the camera must not move), the player's zoom at 50% and 150%, the river at the west bridge, Ox, the countryside's baked ground; and the desktop framing |
 | `exchange` | The Trade Chrysanthemum south of the village: the road from the village's south edge down to its square, the clerk at his booth, the square and the countryside beside it at the phone framing, and the square at the desktop framing |

@@ -174,7 +174,7 @@ function requireRoom(ctx: Ctx) {
 
 /** Fills `incoming` against the best opposite offers, each at the price of the one that was waiting. */
 function match(ctx: Ctx, deps: ExchangeDeps, incoming: any) {
-  let left = incoming.quantity - incoming.filled;
+  let left = incoming.quantity - incoming.filled, traded = 0n;
   const waiting = [...ctx.db.exchangeOffer.itemId.filter(incoming.itemId)]
     .filter((offer: any) => offer.buy !== incoming.buy && !same(offer.identity, incoming.identity) && offer.quantity > offer.filled
       && (incoming.buy ? offer.price <= incoming.price : offer.price >= incoming.price))
@@ -184,6 +184,7 @@ function match(ctx: Ctx, deps: ExchangeDeps, incoming: any) {
     const quantity = Math.min(left, offer.quantity - offer.filled), price: bigint = offer.price;
     const buy = incoming.buy ? incoming : offer, sell = incoming.buy ? offer : incoming;
     const total = price * BigInt(quantity);
+    traded += total;
     creditGold(ctx, sell.identity, total - exchangeFee(total));
     // The buyer set aside their own price; anything under it comes back.
     creditGold(ctx, buy.identity, (buy.price - price) * BigInt(quantity));
@@ -195,6 +196,8 @@ function match(ctx: Ctx, deps: ExchangeDeps, incoming: any) {
     if (filled.filled >= filled.quantity) mailComplete(ctx, filled);
   }
   settle(ctx, { ...incoming, filled: incoming.quantity - left });
+  // Traded in full the moment it went up: it never shows in a slot, so a letter says what it fetched.
+  if (left <= 0 && incoming.filled < incoming.quantity) mailComplete(ctx, incoming, traded);
 }
 
 const goldText = (gold: bigint) => gold.toLocaleString("en-US");
@@ -202,9 +205,12 @@ const goldText = (gold: bigint) => gold.toLocaleString("en-US");
 const nameOf = (itemId: string) => isExchangeResource(itemId) ? REFINE_ORES[itemId].name
   : itemDisplayName(itemId).toLowerCase().replace(/(^|[\s/-])([a-z])/g, (_, gap: string, letter: string) => gap + letter.toUpperCase());
 
-/** A letter to whoever was waiting: their offer filled, or their gear sold, while they were away. */
-function mailComplete(ctx: Ctx, offer: any) {
-  const total = offer.price * BigInt(offer.quantity), item = `${offer.quantity.toLocaleString("en-US")} ${nameOf(offer.itemId)}`;
+/**
+ * A letter when an offer completes: one that was waiting filled, or one traded in full as it went up. `total` is
+ * the gold it traded for: the waiting side's own price, or each fill's for one that traded at once.
+ */
+function mailComplete(ctx: Ctx, offer: any, total: bigint = offer.price * BigInt(offer.quantity)) {
+  const item = `${offer.quantity.toLocaleString("en-US")} ${nameOf(offer.itemId)}`;
   sendPersonalMail(ctx, { key: `exchange-offer-${offer.id}`, identity: offer.identity, title: "Trade Chrysanthemum: Offer Complete",
     body: offer.buy
       ? `You bought ${item} for ${goldText(total)} Gold. It went to your bag, or waits at the Trade Chrysanthemum if your bag was full.`

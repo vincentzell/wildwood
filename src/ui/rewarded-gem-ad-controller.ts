@@ -34,6 +34,8 @@ type RewardedGemAdDependencies = {
   /** This account's last claim and today's count, from the server's view. */
   adGemReward: () => AdGemRewardRecord | null;
   claimAdGems: () => Promise<{ ok: boolean; error?: string }>;
+  /** Tells the server an ad is starting, before it plays. */
+  startAdGems?: () => Promise<{ ok: boolean; error?: string }>;
   /** The game's gem-gain reveal, the one kill gems use. */
   showGemReward?: (amount: number) => void;
   setPromptActive: (active: boolean) => void;
@@ -254,6 +256,16 @@ export function createRewardedGemAdController(
 
   async function showRewardedAd() {
     if (busy || currentStatus().kind !== "ready") return;
+    // The server times the ad from here: a claim pays only once an ad it saw start has run.
+    busy = true;
+    render("checking", "STARTING AD", true);
+    const started = await (dependencies.startAdGems?.() ?? Promise.resolve({ ok: true }));
+    busy = false;
+    if (!started.ok) {
+      dependencies.showMessage((started.error || "AD UNAVAILABLE").toUpperCase(), "#ff9b91");
+      void refreshAvailability();
+      return;
+    }
     const bridge = supportedNativeBridge(dependencies.getNativeBridge());
     if (!bridge) {
       startBrowserAd();

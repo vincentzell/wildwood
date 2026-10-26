@@ -45,12 +45,25 @@ export function createAdGemReward(notify: () => void) {
     }
   }
 
+  /** Tells the server an ad is starting; the claim after it pays only once it has run. */
+  async function startAdGems(): Promise<AdGemClaimResult> {
+    const current = target;
+    if (!current || !current.isCurrent() || !current.connection.isActive) return { ok: false, error: "NOT CONNECTED" };
+    try {
+      await current.connection.reducers.startAdGems({});
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: reducerErrorMessage(error) };
+    }
+  }
+
   return {
     watch,
     api: {
       /** The last claim and today's count as the server has them, or null before the first. */
       adGemReward: (): AdGemRewardRecord | null => record,
       claimAdGems,
+      startAdGems,
     },
   };
 }

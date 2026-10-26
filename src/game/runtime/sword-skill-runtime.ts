@@ -6,6 +6,7 @@ import {
 } from "../../../shared/sword-skills";
 import { segmentCircleHit, segmentEllipseHit } from "../weapon-combat";
 import { isSkillSecondaryTarget } from "./bow-skill-procs";
+import type { DamageSource } from "./dps-meter";
 import type { BossTarget, EnemyShot, EnemyState, PlayerState } from "./types";
 
 type Target = EnemyState | BossTarget;
@@ -28,7 +29,7 @@ export function createSwordSkillRuntime(options: {
   /** Blade Storm's extra Whirlwind ticks and Parry's bigger Deflect return (mastery-techniques.ts); none without. */
   extraWhirlwindTicks?: () => number;
   deflectReturn?: () => number;
-  hit: (target: Target, damage: number, critical: boolean, angle: number, reflected?: boolean) => void;
+  hit: (target: Target, damage: number, critical: boolean, angle: number, source: DamageSource, reflected?: boolean) => void;
 }) {
   const { player, enemies } = options;
   const spins: Spin[] = [], waves: Wave[] = [];
@@ -98,7 +99,7 @@ export function createSwordSkillRuntime(options: {
         const targets = candidates(spin.primary).filter(target => distance(target) <= WHIRLWIND_RADIUS)
           .sort((a, b) => distance(a) - distance(b)).slice(0, WHIRLWIND_MAX_TARGETS);
         for (const target of targets) options.hit(target, spin.damage * WHIRLWIND_DAMAGE_SHARE, spin.critical,
-          Math.atan2(target.y - player.y, target.x - player.x));
+          Math.atan2(target.y - player.y, target.x - player.x), 'sword-spin');
       }
       player.swordSpinClock = Math.max(player.swordSpinClock, spin.startedAt + spin.ticks * WHIRLWIND_TICK_SECONDS - now);
       if (spin.tick >= spin.ticks) spins.splice(index, 1);
@@ -119,7 +120,7 @@ export function createSwordSkillRuntime(options: {
       for (const { target } of hits) {
         if (wave.struck.size >= SHOCKWAVE_MAX_TARGETS) break;
         wave.struck.add(target);
-        options.hit(target, wave.damage * SHOCKWAVE_DAMAGE_SHARE, wave.critical, wave.angle);
+        options.hit(target, wave.damage * SHOCKWAVE_DAMAGE_SHARE, wave.critical, wave.angle, 'sword-wave');
       }
       wave.x += dx; wave.y += dy; wave.traveled = traveled;
       if (traveled >= SHOCKWAVE_RANGE || wave.struck.size >= SHOCKWAVE_MAX_TARGETS) waves.splice(index, 1);
@@ -129,7 +130,7 @@ export function createSwordSkillRuntime(options: {
       if (now < returned.landAt) continue;
       returns.splice(index, 1);
       if (present(returned.target)) options.hit(returned.target, returned.damage, false,
-        Math.atan2(returned.target.y - player.y, returned.target.x - player.x), true);
+        Math.atan2(returned.target.y - player.y, returned.target.x - player.x), 'sword-deflect', true);
     }
   }
   return { swing, deflect, update, clear };

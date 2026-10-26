@@ -18,7 +18,7 @@ import { readPlayerProgress } from "./wide-stats";
 import { collectItem, freeBagSlots, insertKeptCopy, reforgeCopySkills, setFirstCopyRoll } from "./equipment-copies";
 import { activeItemUpgradeEntriesFor } from "./upgrade-bench-slots";
 import { luckInPlay } from "./luck-research";
-import { CRAFT_TOOL, toolExperience, toolSavedMaterials } from "../../shared/tools";
+import { CRAFT_TOOL, toolCraftCost, toolExperience, toolSavedMaterials } from "../../shared/tools";
 import { toolLevelFor } from "./tools";
 
 /** Each craft's experience (shared/crafting.ts), one row per player and craft. Private; read through my_craft_skills. */
@@ -104,9 +104,11 @@ function checkCraft(ctx: Ctx, args: CraftArgs, deps: CraftingDeps) {
   const progress = readPlayerProgress(ctx, ctx.sender);
   if (!progress) throw new SenderError("Player unavailable.");
   if (craftLevel(craftSkillExperience(ctx, ctx.sender)[skill]) < gradeCraftLevel(itemId)) throw new SenderError(`You need ${gradeCraftNeed(itemId)}.`);
+  // The bag needs only what the craft's tool leaves of the recipe; its chance of saving more comes after.
+  const need = toolCraftCost(materials, toolLevelFor(ctx, ctx.sender, CRAFT_TOOL[skill]));
   const held = Object.fromEntries(Object.keys(materials).map(id => [id, oreCount(ctx, ctx.sender, id)]));
-  const short = craftMaterialsShort(materials, held);
-  if (short.length) throw new SenderError(`You need ${short.map(id => `${materials[id].toLocaleString("en-US")} ${MATERIAL_NAMES[id] ?? id}`).join(" and ")}.`);
+  const short = craftMaterialsShort(need, held);
+  if (short.length) throw new SenderError(`You need ${short.map(id => `${need[id].toLocaleString("en-US")} ${MATERIAL_NAMES[id] ?? id}`).join(" and ")}.`);
   return { progress, skill, materials, held };
 }
 

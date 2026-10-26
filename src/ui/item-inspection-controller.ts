@@ -22,6 +22,7 @@ import { armorClassPerkLine, armorClassSetLine } from "../../shared/armor-class-
 import { bootStyleOf, gradeOf, isGradeItemId } from "../../shared/grade-equipment";
 import { BOOT_STYLE_SCHOOL, GEAR_GRADE_NAMES } from "../../shared/gear-grades";
 import { WEAPON_SCHOOL_NAMES } from "../../shared/weapon-mastery";
+import { fillCardEffect } from "./card-effect-line";
 
 export type ItemInspectionAction = {
   label: string;
@@ -162,9 +163,7 @@ function cardSection({ title, cards }: { title: string; cards: readonly string[]
     name.textContent = card ? cardName(card) : "None Active";
     text.append(name);
     for (const line of card ? card.effects.map(effect => cardEffectText(effect)) : ["Cards are switched on in the Cards tab"]) {
-      const effect = document.createElement("span");
-      effect.textContent = line;
-      text.append(effect);
+      text.append(fillCardEffect(document.createElement("span"), line));
     }
     row.append(art, text);
     block.append(row);
@@ -381,7 +380,8 @@ export function createItemInspectionController(elements: ItemInspectionElements)
    * it and Equip or Remove. `found` false is a card never had: its shadow, and no count.
    */
   function openCard(request: { cardId: string; count: number; found?: boolean; context?: string; odds?: string; note?: string;
-    actions?: readonly ItemInspectionAction[] }) {
+    /** Copies in play: each effect reads as their total. One by default. */
+    copies?: number; actions?: readonly ItemInspectionAction[] }) {
     const card = cardDefinition(request.cardId);
     if (!card) return false;
     if (elements.panel.hidden) {
@@ -413,7 +413,7 @@ export function createItemInspectionController(elements: ItemInspectionElements)
     stats.className = "item-inspection-stats";
     for (const effect of card.effects) {
       const value = document.createElement("span");
-      value.textContent = cardEffectText(effect);
+      fillCardEffect(value, cardEffectText(effect, request.copies));
       value.dataset.statKind = effect.value < 0 ? "cost" : "card";
       stats.append(value);
     }

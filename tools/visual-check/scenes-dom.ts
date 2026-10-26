@@ -27,8 +27,11 @@ import { createBuildsTab } from "../../src/ui/builds-tab";
 import { itemDisplayName } from "../../shared/items";
 import { itemInspectionButtonLabel } from "../../src/ui/item-inspection-controller";
 import { installQuestTracker } from "../../src/ui/quest-tracker";
+import { installDpsBreakdown } from "../../src/ui/dps-breakdown";
+import { createOfflineProgressSummary } from "../../src/ui/offline-progress-summary";
 import { questTrackerView } from "../../src/ui/quest-board-controller";
 import { CAMPAIGN_MAPS } from "../../shared/campaign-registry";
+import { CARDS } from "../../shared/cards";
 
 let markup: Promise<Document> | null = null;
 
@@ -435,6 +438,23 @@ async function itemWindow(worn: boolean) {
   await settleCssImages();
 }
 
+/** A card's window with three copies in play: each stacking number shows its total and one card's share times three. */
+async function cardWindow() {
+  const doc = await gameMarkup();
+  document.body.style.background = GROUND;
+  for (const node of doc.body.children) document.body.append(document.importNode(node, true));
+  await import("../../src/ui/game-shell");
+  const controller = createItemInspectionController({
+    panel: byId("itemInspectionPanel"), title: byId("itemInspectionTitle"), content: byId("itemInspectionContent"),
+    back: byId<HTMLButtonElement>("itemInspectionBack"),
+  });
+  const card = CARDS.find(card => card.enemy === "Desert Spider") ?? CARDS[0];
+  controller.openCard({ cardId: card.id, count: 4, copies: 3, context: "Armor Card · 4 Owned · 3 Equipped",
+    odds: "Desert · 1 in 877 kills · Sure by 2,000 kills", note: "Armor Slots 1, 2, 3",
+    actions: [{ label: "Remove", kind: "SECONDARY", onActivate: () => {} }] });
+  await settleCssImages();
+}
+
 /** The Builds tab at phone width: ten rows, a few saved and named, one being renamed. */
 async function builds() {
   await gameMarkup();
@@ -461,15 +481,28 @@ async function builds() {
   await settleCssImages();
 }
 
-/** The HUD quest tracker: one quest on the player's map, two elsewhere with the map named above the enemy. */
+/** The "While You Were Away" choice: fight, mine or chop, each with its own Collect. */
+async function offlineChoice() {
+  await gameMarkup();
+  document.body.style.background = "#151515";
+  const summary = createOfflineProgressSummary({ acknowledge: () => {}, pending: () => null, readyToShow: () => false });
+  summary.show({
+    mapId: "intermediate_snowlands", seconds: 8 * 3600, kills: 4_210, damage: 1_820, health: 9_400, armor: 640, regen: 120, attackSpeed: 0.004,
+    blocked: false,
+    choice: { rocks: 1_174, miningGain: 7_560, mineOres: { mithril_ore: 2_310, starshard: 17 }, trees: 995, woodcuttingGain: 7_960, chopOres: { yew_log: 2_050 } },
+  });
+  await settleCssImages();
+}
+
+/** The HUD quest tracker: one quest on the player's map, two elsewhere with the map named above the stat. */
 async function questTracker() {
   document.body.style.background = GROUND;
   await importById("hud");
   const [here, there, far] = CAMPAIGN_MAPS;
   const quests = [
-    { mapId: here.id, enemy: "Spitter", target: 80, progress: 34 },
-    { mapId: there.id, enemy: "Needle", target: 60, progress: 12, from: "your guild" },
-    { mapId: far.id, enemy: "Brood", target: 100, progress: 0 },
+    { mapId: here.id, stat: "damage" as const, target: 80, progress: 34 },
+    { mapId: there.id, stat: "health" as const, target: 60, progress: 12, from: "your guild" },
+    { mapId: far.id, stat: "regen" as const, target: 100, progress: 0 },
   ];
   const memory = new Map<string, string>();
   installQuestTracker({ view: () => questTrackerView({ day: 0, quests, bonus: 0, guildPoints: 0, guildName: "" }, here.id,
@@ -478,6 +511,21 @@ async function questTracker() {
   await settleCssImages();
 }
 
-export const DOM_SCENES: Record<string, () => Promise<void>> = { icons, hud, wordmark, shops, "gem-shop": gemShop, "server-boost": serverBoost, "exchange-window": exchangeWindow, grades, "quest-tracker": questTracker, builds,
-  "chat-announcement": chatAnnouncement, "item-window": () => itemWindow(false), "item-window-worn": () => itemWindow(true),
+/** The DPS breakdown switched on, over a bow build with Koi and Dragon: each source's DPS and share. */
+async function dpsBreakdown() {
+  document.body.style.background = GROUND;
+  await importById("hud");
+  const rows = [
+    { source: "bow-hit" as const, perSecond: 12_400 }, { source: "card-koi" as const, perSecond: 3_100 },
+    { source: "card-splash" as const, perSecond: 2_900 }, { source: "bow-storm" as const, perSecond: 2_200 },
+    { source: "bow-ricochet" as const, perSecond: 1_100 }, { source: "card-burn" as const, perSecond: 640 },
+  ];
+  const memory = new Map<string, string>([["wildstat-dps-breakdown-enabled", "true"]]);
+  installDpsBreakdown({ meter: { breakdown: () => rows },
+    storage: () => ({ getItem: key => memory.get(key) ?? null, setItem: (key, value) => { memory.set(key, value); } }) });
+  await settleCssImages();
+}
+
+export const DOM_SCENES: Record<string, () => Promise<void>> = { icons, hud, wordmark, shops, "gem-shop": gemShop, "server-boost": serverBoost, "exchange-window": exchangeWindow, grades, "quest-tracker": questTracker, "dps-breakdown": dpsBreakdown, builds, "offline-choice": offlineChoice,
+  "chat-announcement": chatAnnouncement, "item-window": () => itemWindow(false), "card-window": cardWindow, "item-window-worn": () => itemWindow(true),
   "profile-own": () => profileWindow(true), "profile-other": () => profileWindow(false) };

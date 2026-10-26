@@ -1,4 +1,4 @@
-import { CARD_EFFECT_DEFAULTS } from "./card-effects";
+import { CARD_CHANCE_CAP, CARD_DODGE_CAP, CARD_EFFECT_DEFAULTS, CARD_GUARD_CAP } from "./card-effects";
 import { PRISM_MAX_TARGETS } from "./card-bounds";
 import { type CardDefinition, type CardEffect, type CardEffectId, type CardSlot } from "./cards";
 import { MAP_DISPLAY_NAMES } from "./rules";
@@ -17,69 +17,92 @@ const CARD_ZONE_NAMES: Readonly<Record<string, string>> = { endless: "Endless", 
 export const mapName = (mapId: string) =>
   (MAP_DISPLAY_NAMES as Record<string, string>)[mapId]?.replace(/ - \d+$/, "") ?? CARD_ZONE_NAMES[mapId] ?? mapId;
 
-/** What one effect of a card does, as players read it. */
-export function cardEffectText(effect: CardEffect): string {
-  const v = effect.value, abs = number(Math.abs(v));
+const CHANCE_CAPPED: ReadonlySet<CardEffectId> = new Set(["critChance", "doubleStrike", "splitShot", "reflect", "panicHeal", "oreFind", "logFind",
+  "burn", "poison", "chill", "stun", "weaken", "knockback", "chainLightning"]);
+const GUARDS: ReadonlySet<CardEffectId> = new Set(["rangedGuard", "meleeGuard", "bossGuard", "eliteGuard", "raceGuard"]);
+/** The most a stacked effect does: chances and guards have caps, a web slows at most 90%, Last Stand leaves at most full health. */
+const capOf = (effect: CardEffectId) => effect === "dodge" ? CARD_DODGE_CAP : GUARDS.has(effect) ? CARD_GUARD_CAP
+  : CHANCE_CAPPED.has(effect) ? CARD_CHANCE_CAP : effect === "web" ? 90 : effect === "lastStand" ? 100 : Infinity;
+
+/**
+ * What one effect of a card does, as players read it, for this many copies in play: the part that stacks shows its
+ * total and, in brackets, one card's share times the copies ("Damage +30% [10%×3]"); durations, shares and target
+ * counts stay as they are, since copies add only the number. A capped total says so.
+ */
+export function cardEffectText(effect: CardEffect, copies = 1): string {
+  const v = effect.value, n = Math.max(1, Math.floor(copies)), cap = capOf(effect.effect);
+  const total = Math.sign(v * n) * Math.min(cap, Math.abs(v * n)), capped = Math.abs(v * n) > cap ? " (max)" : "";
+  const each = (unit: string) => ` [${number(Math.abs(v))}${unit}×${n}]`;
+  // Signed and bare forms of the stacking number.
+  const sig = (unit = "%") => `${signed(total)}${unit}${capped}${each(unit)}`;
+  const ab = (unit = "%") => `${number(Math.abs(total))}${unit}${capped}${each(unit)}`;
+  const burnShare = effect.share ?? CARD_EFFECT_DEFAULTS.burn.share;
   const lines: Partial<Record<CardEffectId, () => string>> = {
-    atk: () => `Damage ${signed(v)}%`,
-    critChance: () => `Crit Chance ${signed(v)}%`,
-    critDamage: () => `Crit Damage and its cap ${signed(v)}%`,
-    doubleStrike: () => `${abs}% chance a hit lands twice`,
-    splitShot: () => `${abs}% chance to also hit a second nearby enemy`,
-    bossSlayer: () => `Damage to bosses ${signed(v)}%`,
-    eliteSlayer: () => `Damage to elites ${signed(v)}%`,
-    raceSlayer: () => `Damage to ${mapName(effect.mapId ?? "")} enemies ${signed(v)}%`,
-    rangedSlayer: () => `Damage to ranged enemies ${signed(v)}%`,
-    execute: () => `Damage to enemies under ${percent(CARD_EFFECT_DEFAULTS.execute.below)} health ${signed(v)}%`,
-    opener: () => `Damage to enemies at full health ${signed(v)}%`,
-    berserk: () => `Damage ${signed(v)}% while you are under ${percent(CARD_EFFECT_DEFAULTS.berserk.below)} health`,
-    steady: () => `Damage ${signed(v)}% while you stand still`,
-    momentum: () => `Each kill: damage ${signed(v)}% for ${CARD_EFFECT_DEFAULTS.momentum.seconds}s, stacks ${CARD_EFFECT_DEFAULTS.momentum.stacks} times`,
-    burn: () => `${v >= 100 ? "Every hit burns" : `${abs}% chance to burn`}: ${percent(effect.share ?? CARD_EFFECT_DEFAULTS.burn.share)} of the hit over ${effect.seconds ?? CARD_EFFECT_DEFAULTS.burn.seconds}s`,
-    poison: () => `${abs}% chance to poison: ${percent(CARD_EFFECT_DEFAULTS.poison.share)} of the hit over ${CARD_EFFECT_DEFAULTS.poison.seconds}s, and the enemy hits ${percent(CARD_EFFECT_DEFAULTS.poison.weaken)} softer`,
-    chill: () => `${abs}% chance to slow an enemy ${percent(CARD_EFFECT_DEFAULTS.chill.slow)} for ${CARD_EFFECT_DEFAULTS.chill.seconds}s`,
-    stun: () => `${abs}% chance to stun an enemy for ${effect.seconds ?? CARD_EFFECT_DEFAULTS.stun.seconds}s (not bosses)`,
-    weaken: () => `${abs}% chance: the enemy deals ${percent(CARD_EFFECT_DEFAULTS.weaken.weaken)} less damage for ${CARD_EFFECT_DEFAULTS.weaken.seconds}s`,
-    knockback: () => `${abs}% chance to knock an enemy back`,
-    splash: () => effect.chance !== undefined
-      ? `${number(effect.chance)}% chance a hit also deals ${abs}% of its damage to every enemy near the target`
-      : `Every hit also deals ${abs}% of its damage to enemies near the target`,
-    chainLightning: () => `${abs}% chance to arc to ${effect.targets ?? CARD_EFFECT_DEFAULTS.chainLightning.targets} more enemies for ${percent(effect.share ?? CARD_EFFECT_DEFAULTS.chainLightning.share)}`,
-    lifesteal: () => `Heal ${abs}% of the damage you deal`,
-    quickDraw: () => `Attack speed cap ${signed(v)}/s`,
-    arrowStorm: () => `With a bow: Arrow Storm chance ${signed(v)}%`,
-    ricochet: () => `With a bow: Ricochet chance ${signed(v)}%`,
-    piercing: () => `With a bow: Piercing Shot chance ${signed(v)}%`,
+    atk: () => `Damage ${sig()}`,
+    critChance: () => `Crit Chance ${sig()}`,
+    critDamage: () => `Crit Damage and its cap ${sig()}`,
+    doubleStrike: () => `${ab()} chance a hit lands twice`,
+    splitShot: () => `${ab()} chance to also hit a second nearby enemy`,
+    bossSlayer: () => `Damage to bosses ${sig()}`,
+    eliteSlayer: () => `Damage to elites ${sig()}`,
+    raceSlayer: () => `Damage to ${mapName(effect.mapId ?? "")} enemies ${sig()}`,
+    rangedSlayer: () => `Damage to ranged enemies ${sig()}`,
+    execute: () => `Damage to enemies under ${percent(CARD_EFFECT_DEFAULTS.execute.below)} health ${sig()}`,
+    opener: () => `Damage to enemies at full health ${sig()}`,
+    berserk: () => `Damage ${sig()} while you are under ${percent(CARD_EFFECT_DEFAULTS.berserk.below)} health`,
+    steady: () => `Damage ${sig()} while you stand still`,
+    momentum: () => `Each kill: damage ${sig()} for ${CARD_EFFECT_DEFAULTS.momentum.seconds}s, stacks ${CARD_EFFECT_DEFAULTS.momentum.stacks} times`,
+    // Burning on every hit stacks its share per copy; a chance to burn stacks the chance.
+    burn: () => v >= 100
+      ? `Every hit burns: ${percent(burnShare * n)} [${percent(burnShare)}×${n}] of the hit over ${effect.seconds ?? CARD_EFFECT_DEFAULTS.burn.seconds}s`
+      : `${ab()} chance to burn: ${percent(burnShare)} of the hit over ${effect.seconds ?? CARD_EFFECT_DEFAULTS.burn.seconds}s`,
+    poison: () => `${ab()} chance to poison: ${percent(CARD_EFFECT_DEFAULTS.poison.share)} of the hit over ${CARD_EFFECT_DEFAULTS.poison.seconds}s, and the enemy hits ${percent(CARD_EFFECT_DEFAULTS.poison.weaken)} softer`,
+    chill: () => `${ab()} chance to slow an enemy ${percent(CARD_EFFECT_DEFAULTS.chill.slow)} for ${CARD_EFFECT_DEFAULTS.chill.seconds}s`,
+    stun: () => `${ab()} chance to stun an enemy for ${effect.seconds ?? CARD_EFFECT_DEFAULTS.stun.seconds}s (not bosses)`,
+    weaken: () => `${ab()} chance: the enemy deals ${percent(CARD_EFFECT_DEFAULTS.weaken.weaken)} less damage for ${CARD_EFFECT_DEFAULTS.weaken.seconds}s`,
+    knockback: () => `${ab()} chance to knock an enemy back`,
+    // A splash with a chance stacks the chance, its share stays; an always-on one stacks the share.
+    splash: () => {
+      if (effect.chance === undefined) return `Every hit also deals ${ab()} of its damage to enemies near the target`;
+      const chance = Math.min(CARD_CHANCE_CAP, effect.chance * n);
+      return `${number(chance)}%${effect.chance * n > CARD_CHANCE_CAP ? " (max)" : ""} [${number(effect.chance)}%×${n}] chance a hit also deals ${number(Math.abs(v))}% of its damage to every enemy near the target`;
+    },
+    chainLightning: () => `${ab()} chance to arc to ${effect.targets ?? CARD_EFFECT_DEFAULTS.chainLightning.targets} more enemies for ${percent(effect.share ?? CARD_EFFECT_DEFAULTS.chainLightning.share)}`,
+    lifesteal: () => `Heal ${ab()} of the damage you deal`,
+    quickDraw: () => `Attack speed cap ${sig("/s")}`,
+    arrowStorm: () => `With a bow: Arrow Storm chance ${sig()}`,
+    ricochet: () => `With a bow: Ricochet chance ${sig()}`,
+    piercing: () => `With a bow: Piercing Shot chance ${sig()}`,
     iaido: () => "Your first hit on each enemy is always a critical",
-    reap: () => `Regular enemies under ${abs}% health die at once`,
-    maxHealth: () => `Max Health ${signed(v)}%`,
-    armor: () => `Armor ${signed(v)}%`,
-    regen: () => `Regen ${signed(v)}%`,
-    reflect: () => `${abs}% chance to send a hit back`,
-    secondWind: () => `Heal ${abs}% of max health on each kill`,
-    dodge: () => `${abs}% chance to dodge a hit`,
-    rangedGuard: () => `Damage from ranged enemies -${abs}%`,
-    meleeGuard: () => `Damage from melee enemies -${abs}%`,
-    bossGuard: () => `Damage from bosses -${abs}%`,
-    eliteGuard: () => `Damage from elites -${abs}%`,
-    raceGuard: () => `Damage from ${mapName(effect.mapId ?? "")} enemies -${abs}%`,
-    shield: () => `A shield of ${abs}% max health that takes all of the hit that breaks it, back ${effect.seconds ?? CARD_EFFECT_DEFAULTS.shield.seconds}s after the last hit`,
-    panicHeal: () => `Hit under ${percent(CARD_EFFECT_DEFAULTS.panicHeal.below)} health: ${abs}% chance to heal ${percent(CARD_EFFECT_DEFAULTS.panicHeal.heal)}`,
-    lastStand: () => `Once per map visit, a killing blow leaves you at ${abs}% health`,
-    web: () => `Enemies that hit you are slowed ${abs}% for ${effect.seconds ?? CARD_EFFECT_DEFAULTS.web.seconds}s`,
+    reap: () => `Regular enemies under ${ab()} health die at once`,
+    maxHealth: () => `Max Health ${sig()}`,
+    armor: () => `Armor ${sig()}`,
+    regen: () => `Regen ${sig()}`,
+    reflect: () => `${ab()} chance to send a hit back`,
+    secondWind: () => `Heal ${ab()} of max health on each kill`,
+    dodge: () => `${ab()} chance to dodge a hit`,
+    rangedGuard: () => `Damage from ranged enemies -${ab()}`,
+    meleeGuard: () => `Damage from melee enemies -${ab()}`,
+    bossGuard: () => `Damage from bosses -${ab()}`,
+    eliteGuard: () => `Damage from elites -${ab()}`,
+    raceGuard: () => `Damage from ${mapName(effect.mapId ?? "")} enemies -${ab()}`,
+    shield: () => `A shield of ${ab()} max health that takes all of the hit that breaks it, back ${effect.seconds ?? CARD_EFFECT_DEFAULTS.shield.seconds}s after the last hit`,
+    panicHeal: () => `Hit under ${percent(CARD_EFFECT_DEFAULTS.panicHeal.below)} health: ${ab()} chance to heal ${percent(CARD_EFFECT_DEFAULTS.panicHeal.heal)}`,
+    lastStand: () => `Once per map visit, a killing blow leaves you at ${ab()} health`,
+    web: () => `Enemies that hit you are slowed ${ab()} for ${effect.seconds ?? CARD_EFFECT_DEFAULTS.web.seconds}s`,
     prism: () => `A reflected hit also strikes up to ${PRISM_MAX_TARGETS} enemies near the attacker, each once a second at most`,
-    fleetFoot: () => `Move Speed ${signed(v)}%`,
-    longShot: () => `Attack Range ${signed(v)}`,
-    statGain: () => `${STAT_NAMES[effect.stat ?? "damage"]} from kills ${signed(v)}%`,
-    allStatGain: () => `All stats from kills ${signed(v)}%`,
-    cardHunter: () => `Card drop chance ${signed(v)}%`,
-    treasure: () => `Gold drop chance ${signed(v)}%`,
-    respawn: () => `Enemies respawn ${abs}% faster`,
-    miningSpeed: () => `Mining speed ${signed(v)}%`,
-    oreFind: () => `${abs}% chance for an extra ore`,
-    starshardFind: () => `${signed(v)}% chance of a second Starshard`,
-    woodcuttingSpeed: () => `Chop speed ${signed(v)}%`,
-    logFind: () => `${abs}% chance for an extra log`,
+    fleetFoot: () => `Move Speed ${sig()}`,
+    longShot: () => `Attack Range ${sig("")}`,
+    statGain: () => `${STAT_NAMES[effect.stat ?? "damage"]} from kills ${sig()}`,
+    allStatGain: () => `All stats from kills ${sig()}`,
+    cardHunter: () => `Card drop chance ${sig()}`,
+    treasure: () => `Gold drop chance ${sig()}`,
+    respawn: () => `Enemies respawn ${ab()} faster`,
+    miningSpeed: () => `Mining speed ${sig()}`,
+    oreFind: () => `${ab()} chance for an extra ore`,
+    starshardFind: () => `${sig()} chance of a second Starshard`,
+    woodcuttingSpeed: () => `Chop speed ${sig()}`,
+    logFind: () => `${ab()} chance for an extra log`,
     onward: () => "Beating your furthest map's boss teleports you to the next map",
   };
   return lines[effect.effect]?.() ?? effect.effect;

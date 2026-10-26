@@ -489,6 +489,13 @@ export function createAutoFarmPanel(options: {
     return true;
   };
   const onKey = (event: KeyboardEvent) => {
+    // Farming, the window's Back reads Stop, so Escape (which presses a Back) would find none: it closes the window
+    // and leaves the farm running, unless another window with its own Back is open over it.
+    if (event.code === 'Escape' && !event.defaultPrevented && !content.hidden && farming() && !topBackButton(document)) {
+      event.preventDefault();
+      back();
+      return;
+    }
     if (actionForKey(event.code) !== 'autoFarm' || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target as HTMLElement | null;
     if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;

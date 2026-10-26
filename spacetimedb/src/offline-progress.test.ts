@@ -60,10 +60,32 @@ it("pays out the highest map the build can hold, and closes the window behind it
   // Reopening at zero is what stops the same absence paying twice.
   expect(row.awaySinceMicros).toBe(0n);
 
+  expect(row.damage + row.health + row.armor + row.regen).toBeGreaterThan(0);
+  // Offered, not paid, until the fight is picked.
+  expect(progressOf(fixture, fixture.ctx.sender).damage).toBe(before.damage);
+  fixture.run(server.collectOfflineProgressAs, { activity: "fight" });
   const after = progressOf(fixture, fixture.ctx.sender);
   expect(after.damage + after.maxHp + after.armor + after.regen)
     .toBeGreaterThan(before.damage + before.maxHp + before.armor + before.regen);
-  expect(row.damage + row.health + row.armor + row.regen).toBeGreaterThan(0);
+  expect(fixture.db.offlineProgress.identity.find(fixture.ctx.sender).pending).toBe(false);
+  // Collected once: a second pick pays nothing more.
+  fixture.run(server.collectOfflineProgressAs, { activity: "fight" });
+  expect(progressOf(fixture, fixture.ctx.sender).damage).toBe(after.damage);
+});
+
+it("pays the mining instead of the fight when mining is picked", () => {
+  const fixture = away(OFFLINE_WINDOW_SECONDS);
+  const before = progressOf(fixture, fixture.ctx.sender);
+  enter(fixture);
+  const choice = fixture.db.offlineGatherChoice.identity.find(fixture.ctx.sender);
+  expect(choice.rocks).toBeGreaterThan(0);
+  fixture.run(server.collectOfflineProgressAs, { activity: "mine" });
+  expect(progressOf(fixture, fixture.ctx.sender).damage).toBe(before.damage);
+  expect(fixture.db.playerGold.identity.find(fixture.ctx.sender)?.gold ?? 0n).toBe(0n);
+  expect(fixture.db.playerMining.identity.find(fixture.ctx.sender).mining).toBe(choice.miningGain);
+  const copper = [...fixture.db.playerOre.iter()].find((row: any) => row.oreId === "copper_ore");
+  expect(copper?.count).toBe(JSON.parse(choice.mineOres).copper_ore);
+  expect(fixture.db.offlineGatherChoice.identity.find(fixture.ctx.sender)).toBeNull();
 });
 
 it("caps a long absence at the window", () => {
@@ -206,6 +228,7 @@ it("pays no offline farming while a Reflect Only challenge runs", () => {
 it("pays offline kills gold at half the in-play rate, a gold every 10 kills", () => {
   const fixture = away(OFFLINE_WINDOW_SECONDS);
   enter(fixture);
+  fixture.run(server.collectOfflineProgressAs, { activity: "fight" });
   const kills = fixture.db.offlineProgress.identity.find(fixture.ctx.sender).kills;
   expect(kills).toBeGreaterThanOrEqual(10);
   expect(fixture.db.playerGold.identity.find(fixture.ctx.sender)?.gold).toBe(BigInt(Math.floor(kills / 10)));

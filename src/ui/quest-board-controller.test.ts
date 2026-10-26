@@ -67,7 +67,8 @@ it("tracks the quests in play away from home, this map's first, counted as far a
     { mapId: "tutorial_forest", enemy: "Brood", target: 40, progress: 0 },
   ] };
   const view = questTrackerView(week, "tutorial_forest", id => id === "tutorial_forest" ? "Forest" : "Desert", key => key === "tutorial_forest:Spitter:2" ? 4 : undefined)!;
-  expect(view).toMatchObject({ done: 1, total: 3 });
+  // The week counts the quest collected from the pool as well as the player's own three, so it can pass their own.
+  expect(view).toMatchObject({ done: 1, total: 4 });
   expect(view.items.map(item => [item.enemy, item.onMap, item.count, item.where, item.from])).toEqual([
     ["Spitter", true, 4, "Forest", "Odin"], ["Brood", true, 0, "Forest", ""], ["Dune Raider", false, 12, "Desert", ""],
   ]);

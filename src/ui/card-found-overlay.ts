@@ -1,6 +1,7 @@
 import { cardDefinition, type CardRarity } from "../../shared/cards";
 import { cardEffectText, cardName, cardOrigin } from "../../shared/card-text";
 import { CARD_FRAME_COLORS } from "./card-portrait";
+import { fillCardEffect } from "./card-effect-line";
 
 export type CardFound = { cardId: string; artSource: string };
 
@@ -60,7 +61,7 @@ export function createCardFoundOverlay(options: { root?: Document; wait?: (ms: n
     name.id = "cardFoundName";
     const effects = part("div", "card-found-effects");
     for (const effect of card.effects) {
-      const line = part("span", "", cardEffectText(effect));
+      const line = fillCardEffect(part("span", ""), cardEffectText(effect));
       line.dataset.statKind = effect.value < 0 ? "cost" : "card";
       effects.append(line);
     }

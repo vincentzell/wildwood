@@ -1,6 +1,6 @@
 import { renderBooleanSetting } from "./settings";
-import { ENEMY_TYPES, type EnemyKind, type RewardType } from "../game/enemies";
-import { GUILD_QUEST_BONUS_PER_POINT, SOLO_QUEST_BONUS_PER_QUEST, WEEKLY_QUEST_COUNT, activeQuestIndices, ownQuest, questDay, questDone, questOpen, questWeek, questWeekEndsAtMs, type WeeklyQuest } from "../../shared/weekly-quests";
+import { ENEMY_TYPES, rewardStatLabel, type EnemyKind, type RewardType } from "../game/enemies";
+import { GUILD_QUEST_BONUS_PER_POINT, SOLO_QUEST_BONUS_PER_QUEST, WEEKLY_QUEST_COUNT, activeQuestIndices, ownQuest, questCounts, questDay, questTarget, questDone, questOpen, questWeek, questWeekEndsAtMs, type WeeklyQuest } from "../../shared/weekly-quests";
 
 type QuestState = { day: number; quests: WeeklyQuest[]; bonus: number; guildPoints: number; guildName: string };
 type RankingRow = { guildId: string; guildName: string; points: number };
@@ -61,7 +61,7 @@ export function questBoardView(state: QuestState | null, nowMs: number, mapName:
   const all = state?.quests ?? [];
   const own = all.filter(ownQuest);
   const quests = activeQuestIndices(all).map(index => all[index]).map(quest => ({
-    title: `Defeat ${quest.target} ${quest.enemy}`,
+    title: quest.stat ? `Defeat ${quest.target} ${rewardStatLabel({ type: quest.stat, amount: 0 })} Enemies` : `Defeat ${quest.target} ${quest.enemy}`,
     // A collected quest names the member it was taken from; a taken one, who took it.
     where: quest.takenBy ? `Taken by ${quest.takenBy}` : mapName(quest.mapId),
     progress: `${Math.min(quest.progress, quest.target)}/${quest.target}`,
@@ -85,15 +85,15 @@ export function questTrackerView(state: QuestState | null, mapId: string, mapNam
   if (!state?.quests.length) return null;
   const active = activeQuestIndices(state.quests);
   if (!active.length) return null;
-  const own = state.quests.filter(ownQuest);
   return {
-    done: own.filter(questDone).length, total: own.length || WEEKLY_QUEST_COUNT,
+    ...weekCount(state.quests),
     items: active.map(index => {
       const quest = state.quests[index];
-      const count = Math.min(quest.target, Math.max(quest.progress, shownCount(`${quest.mapId}:${quest.enemy}:${index}`) ?? 0));
+      const count = Math.min(quest.target, Math.max(quest.progress, shownCount(`${quest.mapId}:${questTarget(quest)}:${index}`) ?? 0));
       // The stat a kill pays, so the tracker says what the quest is farming.
-      const stat: RewardType | null = ENEMY_TYPES[quest.enemy as EnemyKind]?.reward.type ?? null;
-      return { key: `${index}:${quest.mapId}:${quest.enemy}`, enemy: quest.enemy, stat, where: mapName(quest.mapId), from: quest.from ?? "",
+      // A stat quest names its stat alone; an older one, its enemy and the stat that enemy gives.
+      const stat: RewardType | null = quest.stat ?? ENEMY_TYPES[quest.enemy as EnemyKind]?.reward.type ?? null;
+      return { key: `${index}:${quest.mapId}:${questTarget(quest)}`, enemy: quest.enemy ?? "", stat, where: mapName(quest.mapId), from: quest.from ?? "",
         onMap: quest.mapId === mapId, count, target: quest.target, share: quest.target > 0 ? count / quest.target : 0 };
     })
       // Quests on this map first: they are the ones the player is working on now.
@@ -102,12 +102,21 @@ export function questTrackerView(state: QuestState | null, mapId: string, mapNam
 }
 export type QuestTrackerView = NonNullable<ReturnType<typeof questTrackerView>>;
 
+/**
+ * The week's count on the tracker and the courtyard board: a player's own fifteen and every quest collected from the
+ * guild's pool, so collecting more goes past 15/15 (20/30). A quest someone else took no longer counts here.
+ */
+function weekCount(quests: readonly WeeklyQuest[]) {
+  const own = quests.filter(ownQuest), collected = quests.filter(quest => !ownQuest(quest));
+  return { done: [...own, ...collected].filter(questDone).length, total: (own.length || WEEKLY_QUEST_COUNT) + collected.length };
+}
+
 /** What the board in the courtyard shows: three papers, ticked once the week's quests run out, and the week's count. */
 export function questBoardWorldStatus(state: QuestState | null) {
   if (!state?.quests.length) return null;
   const open = activeQuestIndices(state.quests).length;
-  const own = state.quests.filter(ownQuest);
-  return { finished: [0, 1, 2].map(paper => paper >= open), timer: `${own.filter(questDone).length}/${own.length} done` };
+  const week = weekCount(state.quests);
+  return { finished: [0, 1, 2].map(paper => paper >= open), timer: `${week.done}/${week.total} done` };
 }
 
 /** Home's Quest Board: a game window with the week's quests, three at a time. */
@@ -224,8 +233,12 @@ export function createQuestBoardRuntime(deps: Parameters<typeof createQuestBoard
     refreshAt = performance.now() + 60_000;
     void source.refreshWeeklyQuests?.()?.catch?.(() => {});
   }
-  // Each quest's count as last shown: never below the server's, never backwards.
-  const shown = new Map<string, number>();
+  // Each quest's count as last shown, never below the server's. A kill report goes up within a minute, so two
+  // minutes after the last kill the server's count stands: kills it did not pay never leave the tracker ahead.
+  const SHOWN_FOR_MS = 120_000;
+  const counted = new Map<string, { count: number; atMs: number }>();
+  const shown = { get: (key: string) => { const entry = counted.get(key); return entry && performance.now() - entry.atMs < SHOWN_FOR_MS ? entry.count : undefined; },
+    set: (key: string, count: number) => { counted.set(key, { count, atMs: performance.now() }); }, clear: () => counted.clear() };
   let shownDay = -1;
   return {
     /** A regular enemy died: count it against the quests in play at once, ahead of the server's report. */
@@ -233,14 +246,14 @@ export function createQuestBoardRuntime(deps: Parameters<typeof createQuestBoard
       const state = deps.source()?.weeklyQuests?.();
       if (!state) return;
       if (state.day !== shownDay) { shown.clear(); shownDay = state.day; }
-      // Kills fill the first quest in play for the enemy, the same order the server counts them.
+      // Kills fill the first quest in play they count for, the same order the server counts them.
       for (const index of activeQuestIndices(state.quests)) {
         const quest = state.quests[index];
-        if (quest.mapId !== mapId || quest.enemy !== enemy) continue;
-        const key = `${mapId}:${enemy}:${index}`, before = Math.max(shown.get(key) ?? 0, quest.progress);
+        if (!questCounts(quest, mapId, enemy)) continue;
+        const key = `${mapId}:${questTarget(quest)}:${index}`, before = Math.max(shown.get(key) ?? 0, quest.progress);
         if (before >= quest.target) continue;
         shown.set(key, before + 1);
-        deps.showProgress?.(enemy, before + 1, quest.target);
+        deps.showProgress?.(quest.stat ? rewardStatLabel({ type: quest.stat, amount: 0 }) : enemy, before + 1, quest.target);
         return;
       }
     },

@@ -63,7 +63,7 @@ export function createPlayerCombat(deps: PlayerCombatWiringDeps) {
     effects.spawnDamageNumber(x, y, damage, critical, false, reflected);
 
   return createPlayerCombatController({
-    onDamageDealt: amount => playerDps.record(amount),
+    onDamageDealt: (amount, source) => playerDps.record(amount, source),
     onEnemyDefeated: enemy => later.soul().defeated(enemy) || (later.onboarding()?.enemyDefeated() ?? false),
     soulStatOf: enemy => later.soul().soulStatOf(enemy),
     onSoulKill: stat => later.soul().soulKill(stat),

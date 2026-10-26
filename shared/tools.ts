@@ -86,6 +86,12 @@ export const toolSaveShare = (level: number) => SAVE_PER_MILLE * normalizeToolLe
 /** A craft tool's craft experience: 3% more a level, 30% at 10. */
 export const toolExperience = (level: number) => 1 + .03 * normalizeToolLevel(level);
 
+/** What a recipe needs in the bag with this tool: each material less the whole part the tool always saves. */
+export function toolCraftCost(materials: Materials, level: number): Materials {
+  const perMille = SAVE_PER_MILLE * normalizeToolLevel(level);
+  return Object.fromEntries(Object.entries(materials).map(([id, count]) => [id, count - Math.floor(count * perMille / 1_000)])) as Materials;
+}
+
 /**
  * What a craft tool saves of a recipe: its share of each material, rounded down, and the rest of that share as a
  * chance of one more. A Starshard needed once is saved one time in four at 10. `random` is asked only for a remainder.

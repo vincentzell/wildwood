@@ -7,6 +7,7 @@ import type { AccountAudioRemote } from "../coop/services/account-audio-settings
 import { createAccountAudioSync } from "./account-audio-sync";
 import { requiredElement } from "../game/runtime/dom";
 import { playerDps } from "../game/runtime/dps-meter";
+import { installDpsBreakdown } from "./dps-breakdown";
 import { formatCompactNumber } from "../../shared/compact-number";
 import { setHighResolutionCanvas } from "../game/runtime/render/render-budget";
 import {
@@ -243,6 +244,7 @@ export function createAppShellController(dependencies: AppShellDependencies) {
     refreshSettings();
   });
   setInterval(() => { if (dpsVisible) dpsStatus.textContent = `DPS: ${formatCompactNumber(Math.round(playerDps.perSecond()))}`; }, 500);
+  installDpsBreakdown({ meter: playerDps, storage: () => feedbackStorage });
   latencyToggle.addEventListener("click", () => {
     latencyVisible = !latencyVisible;
     writeBoolean(dependencies.storageKeys.latency, latencyVisible);

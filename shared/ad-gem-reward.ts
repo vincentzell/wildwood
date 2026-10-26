@@ -9,6 +9,8 @@
 export const AD_GEM_REWARD = 10;
 export const AD_GEM_COOLDOWN_MS = 30 * 60_000;
 export const AD_GEM_DAILY_LIMIT = 4;
+/** The shortest ad that pays: a claim needs an ad started at least this long before it (supporters skip the ad). */
+export const AD_WATCH_MIN_SECONDS = 15;
 
 const UTC_DAY_MS = 86_400_000;
 

@@ -8,7 +8,8 @@ const homes = new WeakMap<Element, Element>();
 export function raiseAboveModals(element: HTMLElement, root: Document = element.ownerDocument) {
   if (!homes.has(element) && element.parentElement) homes.set(element, element.parentElement);
   let host: Element | undefined;
-  try { host = [...root.querySelectorAll("dialog[open]")].filter(dialog => dialog.matches(":modal") && !dialog.contains(element)).at(-1); }
+  // A dialog already holding it still counts: a second prompt over the same window stays inside it, not behind it.
+  try { host = [...root.querySelectorAll("dialog[open]")].filter(dialog => dialog.matches(":modal") && dialog !== element && !element.contains(dialog)).at(-1); }
   catch { /* no :modal: it stays where it is */ }
   host ??= homes.get(element) ?? root.body;
   if (element.parentElement !== host) host.append(element);

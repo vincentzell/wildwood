@@ -4,6 +4,7 @@ import {
 import { CARD_CHAIN_RANGE, CARD_SPLASH_MAX_TARGETS, CARD_SPLASH_RADIUS, PRISM_MAX_TARGETS, PRISM_REPEAT_SECONDS } from "../../../shared/card-bounds";
 import { ENEMY_TYPES } from "../enemies";
 import type { BossTarget, EnemyCardStatus, EnemyState, PlayerState } from "./types";
+import type { DamageSource } from "./dps-meter";
 
 type Target = EnemyState | BossTarget;
 type DamageOverTime = { dps: number; left: number; pending: number; tick: number; color: string };
@@ -39,7 +40,7 @@ export function createCardCombat(deps: {
   mapId: () => string;
   isDueling: () => boolean;
   /** Card damage on a target: no crit and no cards; a kill pays as any kill does. Prism's is reflected damage. */
-  strike: (target: Target, damage: number, reflected?: boolean) => void;
+  strike: (target: Target, damage: number, source: DamageSource, reflected?: boolean) => void;
   spawnBurst: (x: number, y: number, color: string, count?: number, speed?: number) => void;
   spawnParticle?: (x: number, y: number, vx: number, vy: number, life: number, maxLife: number, size: number, color: string) => void;
   streak?: (fromX: number, fromY: number, toX: number, toY: number, color: string) => void;
@@ -106,7 +107,7 @@ export function createCardCombat(deps: {
   function splashAround(target: Target, damage: number) {
     if (!(damage > 0)) return;
     deps.spawnBurst(target.x, target.y, COLORS.splash, 10, 120);
-    for (const enemy of near(target.x, target.y, CARD_SPLASH_RADIUS, new Set([target])).slice(0, CARD_SPLASH_MAX_TARGETS)) deps.strike(enemy, damage);
+    for (const enemy of near(target.x, target.y, CARD_SPLASH_RADIUS, new Set([target])).slice(0, CARD_SPLASH_MAX_TARGETS)) deps.strike(enemy, damage, 'card-splash');
   }
 
   function chainLightning(target: Target, damage: number, targets: number) {
@@ -117,7 +118,7 @@ export function createCardCombat(deps: {
       if (!next) return;
       deps.streak?.(from.x, from.y, next.x, next.y, COLORS.chain);
       struck.add(next);
-      deps.strike(next, damage);
+      deps.strike(next, damage, 'card-chain');
       from = next;
     }
   }
@@ -132,7 +133,7 @@ export function createCardCombat(deps: {
     const threshold = cardValue(worn, "reap");
     if (!(threshold > 0) || target.hp >= target.maxHp * threshold / 100) return false;
     deps.spawnBurst(target.x, target.y, "#d7b8ff", 14, 140);
-    deps.strike(target, target.hp);
+    deps.strike(target, target.hp, 'card-reap');
     return true;
   }
 
@@ -232,10 +233,10 @@ export function createCardCombat(deps: {
     deps.spawnBurst(source.x, source.y, COLORS.splash, 10, 120);
     const fresh = near(source.x, source.y, CARD_SPLASH_RADIUS, new Set([source]))
       .filter(enemy => !(clock - (prismStruckAt.get(enemy) ?? -Infinity) < PRISM_REPEAT_SECONDS)).slice(0, PRISM_MAX_TARGETS);
-    for (const enemy of fresh) { prismStruckAt.set(enemy, clock); deps.strike(enemy, damage, true); }
+    for (const enemy of fresh) { prismStruckAt.set(enemy, clock); deps.strike(enemy, damage, 'card-reflect-splash', true); }
   }
 
-  function tickDamage(target: Target, entry: DamageOverTime, dt: number) {
+  function tickDamage(target: Target, entry: DamageOverTime, dt: number, source: DamageSource) {
     const step = Math.min(dt, entry.left);
     entry.left -= step;
     entry.pending += entry.dps * step;
@@ -246,7 +247,7 @@ export function createCardCombat(deps: {
     entry.pending = 0;
     if (amount > 0 && !target.dead) {
       deps.spawnParticle?.(target.x, target.y - 10, 0, -40, .5, .5, 4, entry.color);
-      deps.strike(target, amount);
+      deps.strike(target, amount, source);
     }
   }
 
@@ -269,7 +270,7 @@ export function createCardCombat(deps: {
       for (const kind of ["burn", "poison"] as const) {
         const dot = entry[kind];
         if (!dot) continue;
-        tickDamage(target, dot, dt);
+        tickDamage(target, dot, dt, `card-${kind}`);
         if (dot.left <= 0) delete entry[kind];
       }
       if (target.dead || (!entry.burn && !entry.poison)) dots.delete(target);

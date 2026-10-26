@@ -113,12 +113,14 @@ describe("rewarded gem ad", () => {
     expect(h.claimAdGems).not.toHaveBeenCalled();
 
     click(h.elements.confirmButton);
-    expect(h.elements.browserAd.hidden).toBe(false);
+    // The server is told the ad is starting before it plays.
+    await vi.waitFor(() => expect(h.elements.browserAd.hidden).toBe(false));
     expect(h.setAdPlaybackActive).toHaveBeenLastCalledWith(true);
     expect(h.claimAdGems).not.toHaveBeenCalled();
 
     // The placeholder's timer fires through window.setTimeout; run its tick at the end.
-    vi.setSystemTime(NOON + 30_000);
+    // Waiting for the start lets the clock move a little, so end the ad a second later.
+    vi.setSystemTime(NOON + 31_000);
     const tick = (window.setTimeout as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as () => void;
     tick();
 

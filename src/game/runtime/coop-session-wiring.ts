@@ -87,7 +87,7 @@ export function createCoopSessionWiring(deps: CoopSessionWiringDeps) {
     refreshReconnectOverlay: deps.refreshReconnectOverlay,
   });
   const offlineProgressSummary = createOfflineProgressSummary({
-    acknowledge: () => { void client?.acknowledgeOfflineProgress?.(); },
+    acknowledge: activity => client?.acknowledgeOfflineProgress?.(activity),
     pending: () => client?.pendingOfflineProgress?.(),
     readyToShow: () => !deps.inTutorial() && deps.isRunning(),
   });

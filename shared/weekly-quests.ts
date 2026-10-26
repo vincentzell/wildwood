@@ -1,10 +1,10 @@
 import { CAMPAIGN_MAPS } from "./campaign-registry";
 import { enemyDefeatDefinition } from "./enemy-defeats";
-import { ENEMY_TYPES } from "./enemy-definitions";
+import { ENEMY_TYPES, type RewardType } from "./enemy-definitions";
 
 /**
- * Weekly quests: fifteen a week, each "kill 50 to
- * 100 of one regular campaign enemy", three on the board at a time. Finishing
+ * Weekly quests: fifteen a week, each "on one campaign map, kill 50 to 100
+ * enemies that give one stat", three on the board at a time. Finishing
  * one brings the next, so a player can clear all fifteen in a day or spread
  * them over the week. Every completed quest is a point for the player's guild
  * that week, and next week the whole guild's stat rewards grow by 0.1% for
@@ -24,7 +24,10 @@ export const GUILD_QUEST_BONUS_PER_POINT = .001;
 export const SOLO_QUEST_BONUS_PER_QUEST = .01;
 
 export type WeeklyQuest = {
-  mapId: string; enemy: string; target: number; progress: number;
+  mapId: string; target: number; progress: number;
+  /** The stat: any enemy on the map that gives it counts. Quests drawn before stats name one `enemy` instead. */
+  stat?: RewardType;
+  enemy?: string;
   /** On a leader's board: the member this quest was collected from. */
   from?: string;
   /** On a member's board: the leader who collected it. It does not count here. */
@@ -67,16 +70,29 @@ export function guildQuestBonus(lastWeekPoints: number) {
   return 1 + Math.max(0, Number.isFinite(lastWeekPoints) ? Math.floor(lastWeekPoints) : 0) * GUILD_QUEST_BONUS_PER_POINT;
 }
 
+const REWARD_TYPES: readonly string[] = ["damage", "health", "speed", "armor", "regen", "crit"];
+/** The stat a campaign enemy gives, or null. */
+export const questKillStat = (enemy: string): RewardType | null =>
+  (ENEMY_TYPES as Record<string, { reward: { type: RewardType } }>)[enemy]?.reward.type ?? null;
+/** Whether a kill of this enemy on this map counts toward the quest. */
+export const questCounts = (quest: WeeklyQuest, mapId: string, enemy: string) =>
+  quest.mapId === mapId && (quest.stat ? questKillStat(enemy) === quest.stat : quest.enemy === enemy);
+/** A quest's own key: its stat, or the enemy an older quest names. */
+export const questTarget = (quest: WeeklyQuest) => quest.stat ?? quest.enemy ?? "";
+
 type UnlockSource = Record<string, unknown>;
-/** Every regular (non-elite) enemy on the campaign maps this player can reach. */
+/** Every stat the regular (non-elite) enemies give on each campaign map this player can reach. */
 export function weeklyQuestCandidates(progress: UnlockSource) {
-  const candidates: { mapId: string; enemy: string }[] = [];
+  const candidates: { mapId: string; stat: RewardType }[] = [];
   for (const map of CAMPAIGN_MAPS) {
     if (map.unlockField && progress[map.unlockField] !== true) continue;
+    const stats = new Set<RewardType>();
     for (const enemy of Object.keys(ENEMY_TYPES)) {
       if ((ENEMY_TYPES as Record<string, { elite?: boolean }>)[enemy].elite) continue;
-      if (enemyDefeatDefinition(map.id, enemy)) candidates.push({ mapId: map.id, enemy });
+      const stat = questKillStat(enemy);
+      if (stat && enemyDefeatDefinition(map.id, enemy)) stats.add(stat);
     }
+    for (const stat of stats) candidates.push({ mapId: map.id, stat });
   }
   return candidates;
 }
@@ -96,8 +112,8 @@ function seededRandom(seed: string) {
 
 /**
  * A player's fifteen quests for a week, from the maps they can reach. Every
- * enemy comes up once before any repeats, so a new player with one map open
- * still gets a full week.
+ * map's stats come up once before any repeats, so a new player with one map
+ * open still gets a full week.
  */
 export function weeklyQuestsFor(identityHex: string, week: number, progress: UnlockSource): WeeklyQuest[] {
   const candidates = weeklyQuestCandidates(progress);
@@ -129,9 +145,11 @@ export function parseWeeklyQuests(json: string): WeeklyQuest[] {
   try {
     const list = JSON.parse(json);
     if (!Array.isArray(list)) return [];
-    return list.filter(quest => quest && typeof quest.mapId === "string" && typeof quest.enemy === "string"
+    return list.filter(quest => quest && typeof quest.mapId === "string"
+      && (REWARD_TYPES.includes(quest.stat) || typeof quest.enemy === "string")
       && Number.isFinite(quest.target) && Number.isFinite(quest.progress))
-      .map(quest => ({ mapId: quest.mapId, enemy: quest.enemy, target: quest.target, progress: quest.progress,
+      .map(quest => ({ mapId: quest.mapId, ...(REWARD_TYPES.includes(quest.stat) ? { stat: quest.stat } : { enemy: quest.enemy }),
+        target: quest.target, progress: quest.progress,
         ...(typeof quest.from === "string" && quest.from ? { from: quest.from } : {}),
         ...(typeof quest.takenBy === "string" && quest.takenBy ? { takenBy: quest.takenBy } : {}) }));
   } catch { return []; }
@@ -139,8 +157,8 @@ export function parseWeeklyQuests(json: string): WeeklyQuest[] {
 
 /**
  * Applies a kill report to the quests. Each kill counts toward one quest: the
- * first open one for that enemy fills before the next, so a leader holding
- * two collected quests for the same enemy kills for both. Returns the new list
+ * first open one it counts for fills before the next, so a player holding two
+ * quests for the same stat kills for both. Returns the new list
  * and how many quests this report finished, each of which is a guild point.
  */
 export function applyQuestKills(quests: WeeklyQuest[], mapId: string, kills: { enemy: string; count: number }[]) {
@@ -151,9 +169,15 @@ export function applyQuestKills(quests: WeeklyQuest[], mapId: string, kills: { e
   const active = new Set(activeQuestIndices(quests));
   const next = quests.map((quest, index) => {
     if (!active.has(index) || quest.mapId !== mapId) return quest;
-    const count = Math.min(left.get(quest.enemy) ?? 0, quest.target - quest.progress);
+    let need = quest.target - quest.progress, count = 0;
+    for (const [enemy, available] of left) {
+      if (need <= 0) break;
+      if (!available || !questCounts(quest, mapId, enemy)) continue;
+      const take = Math.min(available, need);
+      left.set(enemy, available - take);
+      need -= take; count += take;
+    }
     if (count <= 0) return quest;
-    left.set(quest.enemy, (left.get(quest.enemy) ?? 0) - count);
     const progress = quest.progress + count;
     if (progress >= quest.target) completed += 1;
     return { ...quest, progress };

@@ -98,7 +98,8 @@ export function installQuestTracker(options: {
       name.textContent = item.enemy;
       const label = document.createElement("span");
       label.className = "quest-tracker-label";
-      label.append(name);
+      // A stat quest has no one enemy: its stat names it.
+      if (item.enemy) label.append(name);
       if (item.stat) {
         const stat = document.createElement("span");
         stat.className = "quest-tracker-stat";
@@ -125,7 +126,7 @@ export function installQuestTracker(options: {
       bar.append(fill);
       // Where first, then the enemy: the map is what a player looks for.
       row.append(where, line, bar);
-      row.setAttribute("aria-label", `${item.enemy}, ${item.count} of ${item.target}, ${item.onMap ? "on this map" : item.where}`);
+      row.setAttribute("aria-label", `${item.enemy || (item.stat ? rewardStatLabel({ type: item.stat, amount: 0 }) : "")}, ${item.count} of ${item.target}, ${item.onMap ? "on this map" : item.where}`);
       return row;
     }));
   }

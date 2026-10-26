@@ -1,4 +1,34 @@
 export const RELEASE_NOTES: Record<string, string[]> = {
+  "0.917.19": [
+    "Coming back shows what fighting, mining and chopping earned while you were away; pick one to collect",
+  ],
+  "0.917.18": [
+    "The DPS Breakdown switch is in Settings > Game > Display & HUD, beside the stat tracker",
+  ],
+  "0.917.17": [
+    "DPS Breakdown in Settings shows where your damage comes from: each source's DPS and share over the last 20 seconds",
+  ],
+  "0.917.16": [
+    "Endless bosses are twice the size of their map's enemies, and their hitbox matches the art",
+    "The Soul Defense Force is drawn at its full size, matching its hitbox",
+  ],
+  "0.917.15": [
+    "The quest tracker counts quests collected from the guild pool, so it goes past 15/15",
+    "Esc closes the Auto Farm, Auto Mine and Auto Chop windows while they run, and they keep running",
+  ],
+  "0.917.14": [
+    "An offer that trades the moment it goes up says Sold or Bought, and a letter confirms it",
+    "Craft tools lower what a craft needs in your bag, and the Smith shows the lower cost",
+    "The quest tracker no longer stays ahead of your real quest count",
+    "A card's per-card share is dimmed so the total reads first",
+    "A second prompt over the trade market or the Smith shows on top, not behind",
+  ],
+  "0.917.13": [
+    "Card effects show how copies stack: 75% [25%×3], and which parts stay the same",
+  ],
+  "0.917.12": [
+    "New quests ask for enemies that give a stat on one map, not one enemy",
+  ],
   "0.917.11": [
     "Added a movable Mysterious Ore timer, enabled in Settings -> Display & HUD",
     "Tracker hides raw values for capped Attack Speed and Crit Damage",
@@ -3962,6 +3992,14 @@ const RELEASE_DATES: Record<string, string> = {
 };
 
 export const RELEASE_DAYS: Record<string, string> = {
+  "0.917.19": "2026-10-26",
+  "0.917.18": "2026-10-26",
+  "0.917.17": "2026-10-26",
+  "0.917.16": "2026-10-26",
+  "0.917.15": "2026-10-26",
+  "0.917.14": "2026-10-26",
+  "0.917.13": "2026-10-26",
+  "0.917.12": "2026-10-25",
   "0.917.11": "2026-10-24",
   "0.917.10": "2026-10-23",
   "0.917.9": "2026-10-23",

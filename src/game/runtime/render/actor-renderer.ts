@@ -19,6 +19,7 @@ import { enemyHpNumbersEnabled } from "../../../ui/enemy-hp-setting";
 import { ownNamePlateEnabled } from "../../../ui/name-plate-setting";
 import { headArtTopOffsetY } from "./overhead-plate";
 import { formatCompactNumber } from "../../../../shared/compact-number";
+import { GENERATED_BOSS_SIZE } from "../../procedural-maps";
 import { attackPoseItem } from "../../../../shared/equipment-appearance";
 import { healthBarTextY } from "./health-bar-layout";
 import { plateFont, platePixels, plateSize, plateStroke } from "./nameplate-scale";
@@ -164,9 +165,6 @@ export function enemyWeaponLayerRotation(
 export function drawableEnemyLayers(layers: LoadedSpriteLayer[] | undefined) {
   return layers?.filter((layer) => layer.image.complete && layer.image.naturalWidth > 0) ?? [];
 }
-
-/** A boss's body is about this share of its art's half-width (Ironhorn's tuned hitbox). */
-const BOSS_HITBOX_ART_SHARE = .76;
 
 export function enemySpriteVerticalBounds(sprite: LoadedEnemySprite | undefined, enemyRadius: number) {
   if (sprite?.animation) {
@@ -787,19 +785,24 @@ export function createActorRenderer(options: {
     }
     const base = enemy.definition ?? ENEMY_TYPES[enemy.type];
     const sourceSprite = options.enemySprites[enemy.type];
-    // An Endless boss borrows a map enemy's art: drawn to fit its own body, as a campaign boss's art does.
-    const spriteScale = enemy.generatedBoss && sourceSprite ? 2 * enemy.r / BOSS_HITBOX_ART_SHARE / sourceSprite.size : enemy.spriteScale ?? 1;
+    // An Endless boss is its map's enemy drawn at twice the size, as its hitbox is.
+    const spriteScale = enemy.generatedBoss ? GENERATED_BOSS_SIZE : enemy.spriteScale ?? 1;
     const sprite = sourceSprite && scaledEnemySprite(sourceSprite, spriteScale);
     const margin = Math.max(80, sprite?.size ?? 0);
     if (x < -margin || y < -margin || x > width + margin || y > height + margin) return;
     const layers = sprite?.layers;
     const image = sprite?.image;
     const imageReady = Boolean(image?.complete && image.naturalWidth > 0);
-    const spriteBounds = enemySpriteVerticalBounds(sprite, enemy.r);
+    // Layered and atlas art draw at their own pixel size, so they take the scale on the canvas;
+    // a single image takes it through its size.
+    const artScale = layers ? spriteScale : 1;
+    const unscaledBounds = enemySpriteVerticalBounds(sprite, enemy.r);
+    const spriteBounds = artScale === 1 ? unscaledBounds
+      : { top: unscaledBounds.top * artScale, bottom: unscaledBounds.bottom * artScale, height: unscaledBounds.height * artScale };
     const spriteHeight = spriteBounds.height;
     if (!sprite?.animation?.hasBakedShadow) {
-      const shadowWidth = enemy.generatedBoss ? (sprite?.size ?? enemy.r * 2) * .6 : Math.max(34, Math.min(76, (sprite?.size ?? enemy.r * 2) * .9));
-      const shadowY = y + enemyShadowOffsetY(sprite, enemy.r);
+      const shadowWidth = spriteScale !== 1 ? (sprite?.size ?? enemy.r * 2) * .6 : Math.max(34, Math.min(76, (sprite?.size ?? enemy.r * 2) * .9));
+      const shadowY = y + enemyShadowOffsetY(sprite, enemy.r) * artScale;
       options.drawShadow(x, shadowY, shadowWidth, .36 * visibility);
     }
 
@@ -817,6 +820,8 @@ export function createActorRenderer(options: {
       y: enemy.combatTargetY ?? options.player.y,
     };
     if (layers && sprite) {
+      ctx.save();
+      if (artScale !== 1) ctx.scale(artScale, artScale);
       ctx.globalAlpha = visibility;
       if (sprite.animation) {
         const animation = sprite.animation;
@@ -877,6 +882,7 @@ export function createActorRenderer(options: {
           }
         }
       }
+      ctx.restore();
     } else if (imageReady && image && sprite) {
       ctx.globalAlpha = visibility;
       ctx.drawImage(
