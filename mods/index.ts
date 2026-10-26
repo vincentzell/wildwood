@@ -15,6 +15,7 @@ import { registerOpenDevMod } from "./misc-open-dev";
 import { REGISTERED_MODS } from "./registry";
 import { registerTokenInjectorMod } from "./misc-token-injector";
 import { registerTradeMarketMod } from "./trade-market";
+import { registerTradeBidVolumeMod } from "./trade-bid-volume";
 import { registerAutoWoodMod } from "./farm-auto-wood";
 import { registerAutoMiningMod } from "./farm-auto-mining";
 import { registerPlayerCoordsMod } from "./misc-player-coords";
@@ -34,6 +35,7 @@ export function installAllMods(): void {
   registerOpenDevMod();
    registerTokenInjectorMod();
   registerTradeMarketMod();
+    registerTradeBidVolumeMod();
   registerAutoWoodMod();
   registerAutoMiningMod();
   registerPlayerCoordsMod();
