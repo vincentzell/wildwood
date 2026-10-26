@@ -1,422 +1,200 @@
 #!/usr/bin/env node
-// patch.cjs — reconstruit misc-login-inject.ts de zéro (overlay login page
-// fonctionnel, isLoginPage() sans le bug #hud) + répare mods/index.ts.
+// patch.cjs — supprime misc-token-injector (redondant), garde misc-login-inject
+// comme seul mod d'injection de token (usage : au login uniquement).
 //
-// Usage : node patch.cjs   (depuis C:\Users\Zell\Desktop\wildwood)
+// Usage :
+//   node patch.cjs              # patch + typecheck + build
+//   node patch.cjs --no-build   # patch seulement
+//   node patch.cjs --commit     # patch + build + commit (sans push)
+//   node patch.cjs --push       # patch + build + commit + push
+//
 // Idempotent.
 
 'use strict';
 const fs = require('fs');
+const { execSync } = require('child_process');
 
-const LOGIN = 'mods/misc-login-inject.ts';
-const INDEX = 'mods/index.ts';
+const FLAGS = new Set(process.argv.slice(2));
+const DO_BUILD  = !FLAGS.has('--no-build');
+const DO_COMMIT = FLAGS.has('--commit') || FLAGS.has('--push');
+const DO_PUSH   = FLAGS.has('--push');
 
-const log = console.log;
-const warn = (m) => console.warn('⚠️  ' + m);
+const TOKEN_FILE = 'mods/misc-token-injector.ts';
+const LOGIN_FILE = 'mods/misc-login-inject.ts';
+const INDEX_FILE = 'mods/index.ts';
 
-// ─────────────────────────────────────────────────────────────────────────
-// Contenu complet de misc-login-inject.ts
-// Reproduit le comportement original + fix #hud dans isLoginPage().
-// ─────────────────────────────────────────────────────────────────────────
-const LOGIN_SRC = `// mods/misc-login-inject.ts
-import { REGISTERED_MODS } from "./registry";
+const log  = (...a) => console.log(...a);
+const warn = (...a) => console.warn('⚠️ ', ...a);
+const err  = (...a) => console.error('❌', ...a);
 
-const STORAGE_KEY = "wildwood-mod-login-inject-enabled";
-const PENDING_KEY = "wildwood-mod-login-inject-pending";
-const RELOAD_GUARD = "__wildwood_login_inject_attempted";
-const ID_TOKEN_KEY = "wss://maincloud.spacetimedb.com/wildwood-coop/auth_token/spacetimeauth_id_token_v1";
+function readOrNull(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } }
 
-function isEnabled(): boolean {
-  try { return localStorage.getItem(STORAGE_KEY) !== "false"; }
-  catch { return true; }
-}
-
-function shouldInclude(key: string): boolean {
-  return (
-    /auth_token\\/spacetimeauth_/.test(key) ||
-    /auth_token\\/legal_consent_/.test(key) ||
-    /auth_token\\/guest_/.test(key)
-  );
-}
-
-function exportTokens(): string {
-  const out: Record<string, string> = {};
+// Retourne true si succès, false si échec. Mode capture : retourne stdout+stderr.
+function run(cmd, { capture = false } = {}) {
+  if (capture) {
+    try { return execSync(cmd, { stdio: 'pipe', encoding: 'utf8' }); }
+    catch (e) { return (e.stdout || '') + (e.stderr || ''); }
+  }
   try {
-    for (const k of Object.keys(localStorage)) {
-      if (shouldInclude(k)) {
-        const v = localStorage.getItem(k);
-        if (v !== null) out[k] = v;
-      }
-    }
-  } catch { /* idem */ }
-  return JSON.stringify(out, null, 2);
-}
-
-function injectTokens(json: string): { ok: boolean; written: number; error?: string } {
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(json); }
-  catch (e) { return { ok: false, written: 0, error: \`JSON invalide: \${(e as Error).message}\` }; }
-  if (typeof parsed !== "object" || parsed === null) {
-    return { ok: false, written: 0, error: "Le JSON doit être un objet" };
+    execSync(cmd, { stdio: 'inherit' });
+    return true;
+  } catch {
+    return false;
   }
-  let written = 0;
-  try {
-    for (const [k, v] of Object.entries(parsed)) {
-      if (!shouldInclude(k)) continue;
-      if (typeof v !== "string") continue;
-      localStorage.setItem(k, v);
-      written++;
-    }
-  } catch (e) {
-    return { ok: false, written, error: \`Erreur écriture: \${(e as Error).message}\` };
-  }
-  return { ok: true, written };
 }
 
-// ─── Détection de la page de login ───────────────────────────────────────
-// Signaux POSITIFS uniquement. #hud est le conteneur de l'app et reste
-// visible sur la page de login — on ne l'utilise donc pas comme signal.
-function isLoginPage(): boolean {
-  const vis = (el: Element | null): boolean =>
-    !!el && (el as HTMLElement).offsetParent !== null;
-  if (vis(document.getElementById("signInFromStartBtn")))   return true;
-  if (vis(document.getElementById("continueGuestBtn")))     return true;
-  if (vis(document.getElementById("accountChoicePanel")))   return true;
-  return false;
-}
-
-// ─── Auto-inject au boot (si pending + pas de token valide) ──────────────
-function tryAutoInject(): void {
-  if (!isEnabled()) return;
-  try {
-    if (localStorage.getItem(RELOAD_GUARD) === "1") return;
-    const pending = localStorage.getItem(PENDING_KEY);
-    if (!pending) return;
-    // Si un token est déjà présent, ne pas écraser
-    const existing = localStorage.getItem(ID_TOKEN_KEY);
-    if (existing) return;
-    let parsed: Record<string, string>;
-    try { parsed = JSON.parse(pending); } catch { return; }
-    let written = 0;
-    for (const [k, v] of Object.entries(parsed)) {
-      if (shouldInclude(k) && typeof v === "string") {
-        localStorage.setItem(k, v);
-        written++;
-      }
-    }
-    if (written > 0) {
-      console.info(\`[mod-login-inject] auto-injection \${written} clé(s), reload…\`);
-      localStorage.setItem(RELOAD_GUARD, "1");
-      location.reload();
-    }
-  } catch { /* idem */ }
-}
-
-let pendingJson = "";
-try { pendingJson = localStorage.getItem(PENDING_KEY) ?? ""; } catch { /* idem */ }
-
-function persistPending(v: string): void {
-  pendingJson = v;
-  try { localStorage.setItem(PENDING_KEY, v); } catch { /* idem */ }
-}
-
-// ─── Rendu (utilisé par l'overlay ET le mod manager) ─────────────────────
-function renderStatus(): HTMLElement {
-  const wrap = document.createElement("div");
-
-  const warnEl = document.createElement("div");
-  warnEl.style.cssText = "font-size:9px;color:#ff6767;margin-bottom:4px;font-weight:bold;";
-  warnEl.textContent = "⚠️ Secret. Ne partage jamais. À usage personnel.";
-  wrap.append(warnEl);
-
-  const ta = document.createElement("textarea");
-  ta.value = pendingJson;
-  ta.rows = 5;
-  ta.placeholder = "Colle ici le JSON exporté depuis l'origine...";
-  ta.style.cssText =
-    "width:100%;box-sizing:border-box;background:rgba(0,0,0,.3);color:inherit;" +
-    "border:1px solid rgba(255,255,255,.15);border-radius:3px;padding:4px;" +
-    "font-family:monospace;font-size:9px;resize:vertical;";
-  ta.addEventListener("input", () => persistPending(ta.value));
-  wrap.append(ta);
-
-  const row = document.createElement("div");
-  row.style.cssText = "display:flex;gap:4px;margin-top:4px;";
-
-  const btnExport = document.createElement("button");
-  btnExport.textContent = "📤 Exporter";
-  btnExport.style.cssText =
-    "flex:1;padding:4px;background:rgba(116,216,255,.22);color:inherit;border:0;" +
-    "border-radius:3px;cursor:pointer;font-size:10px;";
-  btnExport.addEventListener("click", () => {
-    const json = exportTokens();
-    persistPending(json);
-    ta.value = json;
-    navigator.clipboard.writeText(json).catch(() => {
-      const ta2 = document.createElement("textarea");
-      ta2.value = json;
-      ta2.style.cssText = "position:fixed;left:-9999px;";
-      document.body.appendChild(ta2);
-      ta2.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta2);
-    });
-    btnExport.textContent = "✅ Copié";
-    setTimeout(() => { btnExport.textContent = "📤 Exporter"; }, 1500);
-  });
-
-  const btnInject = document.createElement("button");
-  btnInject.textContent = "📥 Injecter + reload";
-  btnInject.style.cssText =
-    "flex:1;padding:4px;background:rgba(105,229,111,.22);color:inherit;border:0;" +
-    "border-radius:3px;cursor:pointer;font-size:10px;";
-  btnInject.addEventListener("click", () => {
-    const v = ta.value.trim();
-    if (!v) { alert("Colle un JSON d'abord."); return; }
-    const result = injectTokens(v);
-    if (!result.ok) {
-      alert(\`Erreur: \${result.error ?? "inconnu"}\`);
-      return;
-    }
-    persistPending(v);
-    try { localStorage.removeItem(RELOAD_GUARD); } catch { /* idem */ }
-    console.info(\`[mod-login-inject] \${result.written} clé(s) injectée(s), reload…\`);
-    location.reload();
-  });
-
-  row.append(btnExport, btnInject);
-  wrap.append(row);
-
-  // Bouton "Continue as Guest" — uniquement visible sur la page de login
-  if (isLoginPage()) {
-    const btnGuest = document.createElement("button");
-    btnGuest.textContent = "🎮 Jouer en invité";
-    btnGuest.style.cssText =
-      "width:100%;margin-top:6px;padding:6px;background:rgba(255,215,90,.22);" +
-      "color:inherit;border:0;border-radius:3px;cursor:pointer;" +
-      "font-size:11px;font-weight:900;";
-    btnGuest.addEventListener("click", () => {
-      const coop = (window as unknown as { wildstatCoop?: { continueAsGuest?: () => void } }).wildstatCoop;
-      if (typeof coop?.continueAsGuest === "function") {
-        coop.continueAsGuest();
-      } else {
-        const native = document.querySelector<HTMLButtonElement>(
-          "#continueGuestBtn, #continueAsGuestBtn, [data-action='continueAsGuest']"
-        );
-        if (native) native.click();
-        else alert("wildstatCoop.continueAsGuest indisponible");
-      }
-    });
-    wrap.append(btnGuest);
-  }
-
-  return wrap;
-}
-
-// ─── Overlay flottant sur la page de login ───────────────────────────────
-let _overlayMounted = false;
-const OVERLAY_ID = "wildwood-login-inject-overlay";
-
-function mountLoginOverlay(): void {
-  if (_overlayMounted) return;
-  if (document.getElementById(OVERLAY_ID)) return;
-  if (!isLoginPage()) return;
-  _overlayMounted = true;
-
-  const host = document.createElement("div");
-  host.id = OVERLAY_ID;
-  host.dataset.wildwoodMod = "login-inject";
-  host.style.cssText =
-    "position:fixed;top:16px;right:16px;z-index:2147483647;" +
-    "width:320px;max-height:calc(100vh - 32px);overflow:auto;" +
-    "padding:10px;background:rgba(20,20,30,.95);color:#e0e0e0;" +
-    "border:1px solid rgba(255,255,255,.2);border-radius:6px;" +
-    "font-family:system-ui,sans-serif;font-size:11px;" +
-    "box-shadow:0 4px 20px rgba(0,0,0,.5);";
-  host.appendChild(renderStatus());
-  document.body.appendChild(host);
-
-  // Démontage dès qu'on quitte la page de login
-  const obs = new MutationObserver(() => {
-    if (!isLoginPage()) {
-      host.remove();
-      _overlayMounted = false;
-      obs.disconnect();
-    }
-  });
-  obs.observe(document.body, { childList: true, subtree: true, attributes: true });
-}
-
-function watchLoginPage(): void {
-  if (isLoginPage()) { mountLoginOverlay(); return; }
-  const obs = new MutationObserver(() => {
-    if (isLoginPage()) { mountLoginOverlay(); obs.disconnect(); }
-  });
-  obs.observe(document.body, { childList: true, subtree: true, attributes: true });
-  setTimeout(() => obs.disconnect(), 60000);
-}
-
-// ─── Enregistrement ──────────────────────────────────────────────────────
-export function registerLoginInjectMod(): void {
-  REGISTERED_MODS.push({
-    id: "misc-login-inject",
-    name: "Login Inject",
-    category: "MISC",
-    loginCompatible: true,
-    switch: {
-      label: "On",
-      get: isEnabled,
-      set: (value) => {
-        try { localStorage.setItem(STORAGE_KEY, String(value)); }
-        catch { /* idem */ }
-      },
-    },
-    status: { render: renderStatus, intervalMs: 2000 },
-    install: () => {
-      tryAutoInject();
-      watchLoginPage();
-    },
-  });
-}
-`;
-
-// ─────────────────────────────────────────────────────────────────────────
-// Écriture de misc-login-inject.ts
-// ─────────────────────────────────────────────────────────────────────────
-function writeLoginFile() {
-  log('── Création misc-login-inject.ts ──');
-  fs.writeFileSync(LOGIN, LOGIN_SRC, 'utf8');
-  log(`  ✓ ${LOGIN} écrit (${LOGIN_SRC.split('\n').length} lignes)`);
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Réparation de mods/index.ts
-// ─────────────────────────────────────────────────────────────────────────
-function fixIndex() {
-  log('── Réparation mods/index.ts ──');
-  let src;
-  try { src = fs.readFileSync(INDEX, 'utf8'); }
-  catch { warn(`${INDEX} introuvable`); return false; }
-
-  const src0 = src;
-
-  // a) import
-  const hasImport = /from\s+["']\.\/misc-login-inject["']/.test(src);
-  if (!hasImport) {
-    // Cherche une ligne d'import existante pour s'ancrer
-    const anchorMatch = src.match(/^import\s+\{[^}]*\}\s+from\s+["']\.\/misc-token-injector["'];?\s*$/m);
-    if (anchorMatch) {
-      const line = anchorMatch[0];
-      src = src.replace(line, `${line}\nimport { registerLoginInjectMod } from "./misc-login-inject";`);
-      log('  ✓ import registerLoginInjectMod ajouté (après token-injector)');
-    } else {
-      // Fallback : insère après la première ligne d'import
-      const firstImport = src.match(/^import\s+.*$/m);
-      if (firstImport) {
-        src = src.replace(firstImport[0], `${firstImport[0]}\nimport { registerLoginInjectMod } from "./misc-login-inject";`);
-        log('  ✓ import ajouté (après le premier import)');
-      } else {
-        warn('impossible de trouver où insérer l\'import');
-      }
-    }
-  } else {
-    log('  ✓ import déjà présent');
-  }
-
-  // b) appel
-  const hasCall = /\bregisterLoginInjectMod\s*\(\s*\)/.test(src);
-  if (!hasCall) {
-    const callAnchor = src.match(/^(\s*)registerTokenInjectorMod\s*\(\s*\)\s*;?\s*$/m);
-    if (callAnchor) {
-      src = src.replace(callAnchor[0], `${callAnchor[1]}registerTokenInjectorMod();\n${callAnchor[1]}registerLoginInjectMod();`);
-      log('  ✓ appel registerLoginInjectMod() ajouté (après token-injector)');
-    } else {
-      // Fallback : ajoute dans installAllMods() si on le trouve
-      const fnMatch = src.match(/(function\s+installAllMods\s*\(\s*\)\s*\{[^}]*?)(\n\s*\})/);
-      if (fnMatch) {
-        src = src.replace(fnMatch[0], `${fnMatch[1]}\n  registerLoginInjectMod();${fnMatch[2]}`);
-        log('  ✓ appel ajouté dans installAllMods()');
-      } else {
-        warn('impossible de trouver où insérer l\'appel — ajoute registerLoginInjectMod() manuellement');
-      }
-    }
-  } else {
-    log('  ✓ appel déjà présent');
-  }
-
-  if (src !== src0) {
-    fs.writeFileSync(INDEX, src, 'utf8');
-    log(`  ✓ ${INDEX} mis à jour`);
-  } else {
-    log('  ✓ aucun changement nécessaire');
-  }
-
-  return /registerLoginInjectMod/.test(src);
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Vérification finale
-// ─────────────────────────────────────────────────────────────────────────
-function verify() {
-  log('── Vérification ──');
-  const problems = [];
-
-  if (!fs.existsSync(LOGIN)) problems.push(`${LOGIN} manquant`);
-  else {
-    const c = fs.readFileSync(LOGIN, 'utf8');
-    if (!/registerLoginInjectMod/.test(c)) problems.push(`${LOGIN} : export manquant`);
-    if (!/function isLoginPage/.test(c)) problems.push(`${LOGIN} : isLoginPage manquant`);
-    if (/document\.getElementById\(\s*["']hud["']\s*\)/.test(c))
-      problems.push(`${LOGIN} : réf #hud encore présente`);
-  }
-
-  if (!fs.existsSync(INDEX)) problems.push(`${INDEX} manquant`);
-  else {
-    const c = fs.readFileSync(INDEX, 'utf8');
-    if (!/from\s+["']\.\/misc-login-inject["']/.test(c))
-      problems.push(`${INDEX} : import misc-login-inject manquant`);
-    if (!/\bregisterLoginInjectMod\s*\(\s*\)/.test(c))
-      problems.push(`${INDEX} : appel registerLoginInjectMod() manquant`);
-  }
-
-  if (problems.length === 0) {
-    log('  ✅ Tout est en ordre');
+// ─── 1. supprimer misc-token-injector.ts ─────────────────────────────────
+function removeTokenInjector() {
+  log('── Suppression misc-token-injector.ts ──');
+  if (!fs.existsSync(TOKEN_FILE)) {
+    log(`  ✓ ${TOKEN_FILE} déjà absent`);
     return true;
   }
-  for (const p of problems) warn(p);
-  return false;
+  const tracked = run(`git ls-files --error-unmatch "${TOKEN_FILE}"`, { capture: true });
+  if (tracked && !/error/i.test(tracked) && tracked.trim().length > 0) {
+    if (!run(`git rm "${TOKEN_FILE}"`)) {
+      err(`git rm a échoué sur ${TOKEN_FILE}`);
+      return false;
+    }
+    log(`  ✓ ${TOKEN_FILE} supprimé (git rm)`);
+  } else {
+    fs.unlinkSync(TOKEN_FILE);
+    log(`  ✓ ${TOKEN_FILE} supprimé`);
+  }
+  return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// main
-// ─────────────────────────────────────────────────────────────────────────
+// ─── 2. nettoyer mods/index.ts ────────────────────────────────────────────
+function cleanIndex() {
+  log('── Nettoyage mods/index.ts ──');
+  const src0 = readOrNull(INDEX_FILE);
+  if (src0 === null) { err(`${INDEX_FILE} introuvable`); return false; }
+
+  const src = src0
+    .split(/\r?\n/)
+    .filter((line) => {
+      if (/import\s+\{[^}]*registerTokenInjectorMod[^}]*\}\s+from\s+["']\.\/misc-token-injector["']/.test(line)) return false;
+      if (/^\s*registerTokenInjectorMod\s*\(\s*\)\s*;?\s*$/.test(line)) return false;
+      return true;
+    })
+    .join('\n');
+
+  if (src === src0) { log('  ✓ rien à retirer (déjà clean)'); return true; }
+  fs.writeFileSync(INDEX_FILE, src, 'utf8');
+  log(`  ✓ ${INDEX_FILE} nettoyé (import + appel retirés)`);
+  return true;
+}
+
+// ─── 3. vérifier login-inject.ts ──────────────────────────────────────────
+function verifyLoginInject() {
+  log('── Vérification misc-login-inject.ts ──');
+  const src = readOrNull(LOGIN_FILE);
+  if (src === null) { err(`${LOGIN_FILE} introuvable`); return false; }
+
+  const problems = [];
+  if (!/export\s+function\s+registerLoginInjectMod/.test(src))
+    problems.push('export registerLoginInjectMod manquant');
+  if (!/function\s+isLoginPage/.test(src))
+    problems.push('isLoginPage() manquant');
+  if (/getElementById\(\s*["']hud["']\s*\)/.test(src))
+    problems.push('référence #hud encore présente (bug reviendra)');
+
+  if (problems.length) {
+    for (const p of problems) err(`${LOGIN_FILE}: ${p}`);
+    return false;
+  }
+  log(`  ✓ ${LOGIN_FILE} : OK (fix #hud en place)`);
+  return true;
+}
+
+// ─── 4. vérifier index.ts ─────────────────────────────────────────────────
+function verifyIndex() {
+  log('── Vérification mods/index.ts ──');
+  const src = readOrNull(INDEX_FILE);
+  if (src === null) { err(`${INDEX_FILE} introuvable`); return false; }
+
+  const problems = [];
+  if (!/from\s+["']\.\/misc-login-inject["']/.test(src))
+    problems.push('import misc-login-inject manquant');
+  if (!/\bregisterLoginInjectMod\s*\(\s*\)/.test(src))
+    problems.push('appel registerLoginInjectMod() manquant');
+  if (/misc-token-injector|registerTokenInjectorMod/.test(src))
+    problems.push('référence token-injector encore présente');
+
+  if (problems.length) {
+    for (const p of problems) err(`${INDEX_FILE}: ${p}`);
+    return false;
+  }
+  log(`  ✓ ${INDEX_FILE} : OK`);
+  return true;
+}
+
+// ─── 5. typecheck + build ─────────────────────────────────────────────────
+function buildAndTypecheck() {
+  if (!DO_BUILD) { log('── Build (skip: --no-build) ──'); return true; }
+  log('── npm run typecheck:coop ──');
+  if (!run('npm run typecheck:coop')) { err('typecheck:coop a échoué'); return false; }
+  log('── npm run build:client ──');
+  if (!run('npm run build:client')) { err('build:client a échoué'); return false; }
+  return true;
+}
+
+// ─── 6. commit + push ─────────────────────────────────────────────────────
+function commitAndPush() {
+  if (!DO_COMMIT) { log('── Commit/push (skip : utilise --commit ou --push) ──'); return true; }
+  log('── git add + commit ──');
+  if (!run('git add -A')) { err('git add a échoué'); return false; }
+  const msg = 'refactor(mods): remove token-injector, login-inject is login-only';
+  const out = run(`git commit -m "${msg}"`, { capture: true });
+  if (/nothing to commit/i.test(out)) {
+    warn('git commit : rien à commit (déjà fait ?)');
+  } else if (/error/i.test(out) && !/nothing to commit/i.test(out)) {
+    err('git commit a échoué : ' + out.trim());
+    return false;
+  } else {
+    log('  ✓ commit fait');
+  }
+
+  if (!DO_PUSH) { log('  ✓ (skip push — utilise --push)'); return true; }
+  log('── git push origin main ──');
+  if (!run('git push origin main')) { err('git push a échoué'); return false; }
+  log('  ✓ push fait');
+  return true;
+}
+
+// ─── main ─────────────────────────────────────────────────────────────────
 function main() {
-  if (!fs.existsSync('mods') || !fs.existsSync(INDEX)) {
-    console.error('❌ Lance depuis la racine du repo (mods/ et mods/index.ts attendus).');
+  if (!fs.existsSync('mods') || !fs.existsSync(INDEX_FILE)) {
+    err('Lance depuis la racine du repo (mods/ + mods/index.ts requis).');
     process.exit(1);
   }
 
-  writeLoginFile();
-  fixIndex();
-  const ok = verify();
-
-  log('');
-  if (!ok) {
-    log('❌ Problèmes restants — voir warnings.');
-    process.exit(2);
+  const steps = [
+    ['Suppression',  removeTokenInjector],
+    ['Index clean',  cleanIndex],
+    ['Verify login', verifyLoginInject],
+    ['Verify index', verifyIndex],
+    ['Build',        buildAndTypecheck],
+    ['Commit/push',  commitAndPush],
+  ];
+  for (const [name, fn] of steps) {
+    if (!fn()) { err(`Étape "${name}" a échoué — arrêt.`); process.exit(2); }
   }
 
-  log('Prochaines commandes :');
-  log('  npm run build');
-  log('  git status                      # → mods/misc-login-inject.ts (nouveau)');
-  log('                                  #   mods/index.ts (modifié)');
-  log('  git add -A');
-  log('  git commit -m "fix(login-inject): recreate with #hud-safe isLoginPage()"');
-  log('  git push origin main');
   log('');
-  log('Test après build :');
-  log('  - login page → overlay flottant haut droite');
-  log('  - console : document.getElementById("wildwood-login-inject-overlay")  → non null');
+  log('✅ Terminé.');
+  if (!DO_COMMIT) {
+    log('');
+    log('Commit + push manuels :');
+    log('  git add -A');
+    log('  git commit -m "refactor(mods): remove token-injector, login-inject is login-only"');
+    log('  git push origin main');
+  }
+  log('');
+  log('Nettoyage navigateur (une seule fois), console du jeu :');
+  log('  localStorage.removeItem("wildwood-mod-token-injector-enabled");');
+  log('  localStorage.removeItem("wildwood-mod-token-injector-pending");');
+  log('  sessionStorage.removeItem("__wt_auto_inject_attempted");');
 }
 
 main();
