@@ -1,4 +1,5 @@
 // mods/index.ts
+import { registerLoginInjectMod } from "./misc-login-inject";
 import { installModMenu, installLoginOverlay } from "./modmenu";
 import { registerFarmAutoDodgeMod } from "./farm-auto-kiting";
 import { registerAutoRetreatRegenMod } from "./farm-auto-retreat-regen";
@@ -21,6 +22,7 @@ import { registerAutoMiningMod } from "./farm-auto-mining";
 import { registerPlayerCoordsMod } from "./misc-player-coords";
 
 export function installAllMods(): void {
+  registerLoginInjectMod();
   registerFarmAutoDodgeMod();
   registerAutoRetreatRegenMod();
   registerAutoPrestigeMod();
