@@ -18,7 +18,8 @@ let currentQuestMap = "";
 
 type CoopQuest = {
   mapId: string;
-  enemy: string;
+  enemy?: string;      // undefined pour les guild stat quests
+  stat?: string;       // "speed" | "armor" | "crit" | "damage" | "health" | "regen"
   target: number;
   progress: number;
   takenBy?: string;
@@ -83,18 +84,20 @@ export function isAutoQuestEnabled(): boolean {
 function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
-  // // [patched:skip-guild-stat-quests]
-  // Le serveur renvoie aussi des "guild stat quests" au format
-  // { mapId, stat: "speed"|"armor"|..., target, progress, from: "your guild" }
-  // sans champ `enemy`. Le mod ne sait pas les farmer (il faudrait équiper
-  // la bonne stat et farmer la bonne map). On les ignore pour ne pas boucler
-  // sur `stat introuvable pour undefined` dans tryOneQuest().
+  // On farme les DEUX types de quêtes :
+  //  - perso (from undefined)      : quêtes hebdo individuelles, ont `enemy`
+  //  - guild (from = "your guild") : quêtes collectées, ont `stat` (pas d'`enemy`)
+  //
+  // Le serveur renvoie pour les guild quests :
+  //   { mapId, stat: "speed"|"armor"|"crit"|"damage"|"health"|"regen", target, progress, from: "your guild" }
+  // Ces quêtes progressent en farmant le groupe d'aggro `stat:<nom>` sur la
+  // bonne map (vérifié manuellement).
+  //
+  // On skip les quêtes déjà prises par un autre joueur (takenBy).
   return data.quests.filter(q =>
     q.progress < q.target &&
     !q.takenBy &&
-    typeof q.enemy === "string" &&
-    q.enemy.length > 0 &&
-    ENEMY_TYPES[q.enemy as keyof typeof ENEMY_TYPES] !== undefined
+    (q.enemy || q.stat)
   );
 }
 
@@ -105,10 +108,7 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   if (!data?.quests || !data.guildName) return;
   const perso = data.quests.filter(quest => !quest.from);
   const collected = data.quests.filter(quest => quest.from);
-  // FIX: ne pas tenter la collecte si on est déjà à 15/15.
-  // Le serveur renverrait "Finish some of your 15 collected quests first".
-  // Comme activeQuests farme maintenant les guild quests, elles vont
-  // se terminer avec le temps et libéreront le slot naturellement.
+  // Ne pas tenter la collecte si on est déjà à 15/15.
   if (collected.length >= 15) return;
   if (perso.length === 0) return;
   const allDone = perso.every(quest => quest.progress >= quest.target);
@@ -216,7 +216,7 @@ let intervalId: number | null = null;
 
 async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   currentPhase = "traveling";
-  currentQuestEnemy = quest.enemy;
+  currentQuestEnemy = quest.enemy ?? (quest.stat ? `guild:${quest.stat}` : "?");
   currentQuestMap = quest.mapId;
   if (!(await travelTo(coop, quest.mapId))) {
     console.warn(`[mod-auto-quest] voyage vers ${quest.mapId} échoué`);
@@ -224,10 +224,17 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   }
   await new Promise(resolve => setTimeout(resolve, 800));
 
-  const def = ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES];
-  const stat = def?.reward.type;
+  // Résolution de la stat : directe pour les guild quests, via ENEMY_TYPES
+  // pour les kill quests.
+  let stat: string | null = null;
+  if (quest.stat) {
+    stat = quest.stat;
+  } else if (quest.enemy) {
+    const def = ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES];
+    stat = def?.reward.type ?? null;
+  }
   if (!stat) {
-    console.warn(`[mod-auto-quest] stat introuvable pour ${quest.enemy}`);
+    console.warn(`[mod-auto-quest] stat introuvable pour ${quest.enemy ?? quest.stat ?? "?"}`);
     return false;
   }
   if (!ensureFarmPanelOpen()) return false;
@@ -247,9 +254,13 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   while (Date.now() < deadline && !abort) {
     await new Promise(resolve => setTimeout(resolve, TICK_MS));
     if (coop.localState?.()?.hp === 0) break;
-    const current = coop.weeklyQuests?.()?.quests.find(q =>
-      q.mapId === quest.mapId && q.enemy === quest.enemy && q.target === quest.target,
-    );
+    // Match enemy OU stat selon le type de quête.
+    const current = coop.weeklyQuests?.()?.quests.find(q => {
+      if (q.mapId !== quest.mapId || q.target !== quest.target) return false;
+      if (quest.enemy && q.enemy === quest.enemy) return true;
+      if (quest.stat && q.stat === quest.stat) return true;
+      return false;
+    });
     if (current?.progress !== undefined && current.progress >= current.target) {
       currentPhase = "waiting";
       return true;
@@ -285,29 +296,6 @@ async function runLoop(coop: CoopLike): Promise<void> {
 
 function startPolling(): void {
   if (intervalId !== null) return;
-  // // [patched:stat-groups-probe]
-  // Dump une seule fois des groupes d'aggro disponibles dans #autoFarmSheet.
-  // Utile pour vérifier si les guild stat quests ("stat:speed", "stat:armor", …)
-  // ont un groupe natif — si oui, une future extension pourrait les farmer.
-  try {
-    const w = window as unknown as { __wildwoodQuestProbeDone?: boolean };
-    if (!w.__wildwoodQuestProbeDone) {
-      w.__wildwoodQuestProbeDone = true;
-      setTimeout(() => {
-        const sheet = document.getElementById("autoFarmSheet");
-        const groups = sheet
-          ? [...sheet.querySelectorAll<HTMLElement>("[data-group]")].map(el => el.dataset.group ?? "")
-          : [];
-        console.info("[mod-auto-quest] groupes aggro disponibles :", groups);
-        const coop = getCoop();
-        const statQuests = coop?.weeklyQuests?.()?.quests.filter(q => (q as { stat?: string }).stat) ?? [];
-        if (statQuests.length > 0) {
-          console.info("[mod-auto-quest] guild stat quests détectées :", statQuests.length);
-          console.info("[mod-auto-quest] stats demandées :", [...new Set(statQuests.map(q => (q as { stat?: string }).stat))]);
-        }
-      }, 2000);
-    }
-  } catch { /* probe best-effort */ }
   const tick = () => {
     if (!isAutoQuestEnabled() || running) return;
     const coop = getCoop();
@@ -377,7 +365,7 @@ function renderStatus(): HTMLElement {
 
   for (const quest of quests) {
     const isCurrent = currentPhase === "farming"
-      && quest.enemy === currentQuestEnemy
+      && (quest.enemy ? quest.enemy === currentQuestEnemy : `guild:${quest.stat}` === currentQuestEnemy)
       && quest.mapId === currentQuestMap;
     const row = document.createElement("div");
     row.style.cssText =
@@ -386,7 +374,8 @@ function renderStatus(): HTMLElement {
     const line1 = document.createElement("div");
     line1.style.cssText = "display:flex;justify-content:space-between;gap:6px;";
     const name = document.createElement("span");
-    name.textContent = (isCurrent ? "▶ " : "") + quest.enemy;
+    const label = quest.enemy ?? (quest.stat ? `guild ${quest.stat}` : "?");
+    name.textContent = (isCurrent ? "▶ " : "") + label;
     name.style.fontWeight = isCurrent ? "700" : "500";
     const progress = document.createElement("span");
     progress.style.opacity = ".85";
@@ -394,7 +383,9 @@ function renderStatus(): HTMLElement {
     line1.append(name, progress);
     const line2 = document.createElement("div");
     line2.style.cssText = `opacity:.6;font-size:9px;padding-left:${isCurrent ? "12px" : "0"}`;
-    const stat = ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES]?.reward.type ?? "?";
+    const stat = quest.enemy
+      ? (ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES]?.reward.type ?? "?")
+      : (quest.stat ?? "?");
     line2.textContent = `${quest.mapId} · ${stat}`;
     row.append(line1, line2);
     wrap.append(row);
