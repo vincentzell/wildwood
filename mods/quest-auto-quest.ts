@@ -83,7 +83,16 @@ export function isAutoQuestEnabled(): boolean {
 function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
-  return data.quests.filter(q => q.progress < q.target && !q.takenBy && !q.from);
+  // FIX: on farme les DEUX types de quêtes :
+  //  - perso  (from undefined) : tes quêtes hebdo individuelles
+  //  - guild  (from set)       : les quêtes collectées dans le pool de guilde
+  //
+  // Sans ça, après une collecte, les quêtes collectées restent non terminées
+  // (le mod ne les voit pas), et le serveur refuse toute nouvelle collecte
+  // avec "Finish some of your 15 collected quests first".
+  //
+  // On skip uniquement les quêtes déjà prises par un autre joueur.
+  return data.quests.filter(q => q.progress < q.target && !q.takenBy);
 }
 
 async function tryCollectGuild(coop: CoopLike): Promise<void> {
@@ -93,12 +102,14 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   if (!data?.quests || !data.guildName) return;
   const perso = data.quests.filter(quest => !quest.from);
   const collected = data.quests.filter(quest => quest.from);
+  // FIX: ne pas tenter la collecte si on est déjà à 15/15.
+  // Le serveur renverrait "Finish some of your 15 collected quests first".
+  // Comme activeQuests farme maintenant les guild quests, elles vont
+  // se terminer avec le temps et libéreront le slot naturellement.
+  if (collected.length >= 15) return;
   if (perso.length === 0) return;
   const allDone = perso.every(quest => quest.progress >= quest.target);
   if (!allDone) return;
-  const notTaken = perso.every(quest => !quest.takenBy || quest.progress >= quest.target);
-  if (!notTaken) return;
-  // Le serveur reste l'autorité sur la limite de collecte (15/semaine).
   const identity = coop.localIdentity?.();
   if (!identity || !coop.guild?.guildAction) return;
 
