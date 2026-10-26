@@ -1,3 +1,4 @@
+// mods/misc-auto-upgrade.ts
 import { MAX_SLOT_UPGRADE_TIER, type UpgradeSlot } from "../shared/items";
 import { upgradeSlotForItem } from "../shared/slot-upgrades";
 import { REGISTERED_MODS } from "./registry";
@@ -6,6 +7,9 @@ const STORAGE_KEY = "wildwood-mod-auto-upgrade-enabled";
 const POLL_MS = 30_000;
 const UPGRADE_TRACKS: readonly UpgradeSlot[] = ["HAND", "HEAD", "CHEST"];
 const UPGRADE_QUEUES = [1, 2, 3] as const;
+
+// Backoff après un rejet "bench|smith" du serveur, reset si la position change
+const NOT_AT_BENCH_BACKOFF_MS = 2 * 60 * 1000;
 
 type UpgradeQueue = typeof UPGRADE_QUEUES[number];
 type SavedProgress = {
@@ -18,7 +22,7 @@ type SavedProgress = {
 
 type CoopLike = {
   savedProgress?: () => SavedProgress;
-  localState?: () => { x?: number; y?: number } | null;
+  localState?: () => { x?: number; y?: number; mapId?: string } | null;
   activeItemUpgrades?: () => { slot: UpgradeQueue; itemId: string }[];
   secondUpgradeSlotUnlocked?: () => boolean;
   thirdUpgradeSlotUnlocked?: () => boolean;
@@ -53,6 +57,10 @@ let lastAction = "";
 let lastError = "";
 let intervalId: number | null = null;
 
+// Garde-fou : backoff + détection "position stable"
+let notAtBenchUntilMs = 0;
+let lastPosKey = "";
+
 function equippedTracks(progress: NonNullable<SavedProgress>): UpgradeSlot[] {
   const itemIds = [
     progress.equippedRightHand,
@@ -78,6 +86,29 @@ function reportError(message: string): void {
   }
 }
 
+function isVisible(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  if (el.hasAttribute("hidden")) return false;
+  const s = window.getComputedStyle(el);
+  if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false;
+  return el.getClientRects().length > 0;
+}
+
+/**
+ * Garde-fou : le Smith et le bench Slot Upgrades sont à Town, comme l'Exchange.
+ * - Si on n'est pas dans Town → inutile d'appeler l'API, le serveur rejettera.
+ * - Si le bouton natif "Gear Upgrades In Town" est visible → signal que le joueur
+ *   n'est pas à portée du Smith (le jeu l'affiche pour l'inviter à y aller).
+ */
+function isAtSmithLocation(): boolean {
+  try {
+    if (getCoop()?.localState?.()?.mapId !== "town") return false;
+  } catch { return false; }
+  const notice = document.getElementById("smithBuyNotice");
+  if (notice && isVisible(notice)) return false;
+  return true;
+}
+
 async function tick(): Promise<void> {
   if (running || !isAutoUpgradeEnabled() || Date.now() - lastAttemptTs < POLL_MS) return;
   const coop = getCoop();
@@ -86,10 +117,34 @@ async function tick(): Promise<void> {
 
   const position = coop.localState();
   if (!position || typeof position.x !== "number" || typeof position.y !== "number") return;
+
+  // ─── Garde-fou 1 : pas dans Town / pas à portée du Smith ───
+  // Évite 2880 appels rejetés/jour quand le joueur farme sur une map enemy.
+  if (!isAtSmithLocation()) {
+    lastError = "";
+    lastAction = "Hors portée du Smith (Town)";
+    return;
+  }
+
+  // ─── Garde-fou 2 : backoff après un rejet "bench|smith" ───
+  // Reset dès que la position change de >1px (joueur s'est rapproché, téléport, etc.)
+  const posKey = `${Math.round(position.x)},${Math.round(position.y)}`;
+  if (posKey !== lastPosKey) {
+    lastPosKey = posKey;
+    notAtBenchUntilMs = 0;
+  }
+  if (notAtBenchUntilMs > 0 && Date.now() < notAtBenchUntilMs) {
+    lastError = "";
+    const left = Math.ceil((notAtBenchUntilMs - Date.now()) / 1000);
+    lastAction = `Hors portée — retry dans ${left}s`;
+    return;
+  }
+
   const progress = coop.savedProgress();
   if (!progress) return;
   const tracks = equippedTracks(progress);
   if (tracks.length === 0) {
+    lastError = "";
     lastAction = "Aucun équipement améliorable équipé";
     return;
   }
@@ -114,11 +169,18 @@ async function tick(): Promise<void> {
           lastError = "";
           lastAction = `▶ Q${queue} ${track}`;
           warnedNotAtBench = false;
+          notAtBenchUntilMs = 0;
           return;
         }
         if (result.error) {
+          if (/bench|smith/i.test(result.error)) {
+            // Backoff long : on retente quand le joueur bouge (donc quand il s'approche)
+            notAtBenchUntilMs = Date.now() + NOT_AT_BENCH_BACKOFF_MS;
+            lastError = "";
+            lastAction = "Pas au Smith — bouge pour réessayer";
+            return;
+          }
           reportError(result.error);
-          if (/bench|smith/i.test(result.error)) return;
         }
       }
     }
@@ -143,6 +205,8 @@ function stopPolling(): void {
     window.clearInterval(intervalId);
     intervalId = null;
   }
+  notAtBenchUntilMs = 0;
+  lastPosKey = "";
 }
 
 function renderStatus(): HTMLElement {
