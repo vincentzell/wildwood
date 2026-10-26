@@ -19,18 +19,6 @@ function shouldInclude(key: string): boolean {
   );
 }
 
-function exportTokens(): string {
-  const out: Record<string, string> = {};
-  try {
-    for (const k of Object.keys(localStorage)) {
-      if (shouldInclude(k)) {
-        const v = localStorage.getItem(k);
-        if (v !== null) out[k] = v;
-      }
-    }
-  } catch { /* idem */ }
-  return JSON.stringify(out, null, 2);
-}
 
 function injectTokens(json: string): { ok: boolean; written: number; error?: string } {
   let parsed: Record<string, unknown>;
@@ -123,28 +111,6 @@ function renderStatus(): HTMLElement {
   const row = document.createElement("div");
   row.style.cssText = "display:flex;gap:4px;margin-top:4px;";
 
-  const btnExport = document.createElement("button");
-  btnExport.textContent = "📤 Exporter";
-  btnExport.style.cssText =
-    "flex:1;padding:4px;background:rgba(116,216,255,.22);color:inherit;border:0;" +
-    "border-radius:3px;cursor:pointer;font-size:10px;";
-  btnExport.addEventListener("click", () => {
-    const json = exportTokens();
-    persistPending(json);
-    ta.value = json;
-    navigator.clipboard.writeText(json).catch(() => {
-      const ta2 = document.createElement("textarea");
-      ta2.value = json;
-      ta2.style.cssText = "position:fixed;left:-9999px;";
-      document.body.appendChild(ta2);
-      ta2.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta2);
-    });
-    btnExport.textContent = "✅ Copié";
-    setTimeout(() => { btnExport.textContent = "📤 Exporter"; }, 1500);
-  });
-
   const btnInject = document.createElement("button");
   btnInject.textContent = "📥 Injecter + reload";
   btnInject.style.cssText =
@@ -164,7 +130,7 @@ function renderStatus(): HTMLElement {
     location.reload();
   });
 
-  row.append(btnExport, btnInject);
+  row.append(btnInject);
   wrap.append(row);
 
   // Bouton "Continue as Guest" — uniquement visible sur la page de login
