@@ -84,18 +84,37 @@ function checkToken(): TokenCheck {
   };
 }
 
+// [PATCH:login-inject-v1]
 // ─── Détection de la page de login ───
-// Le jeu monte `#hud` quand le monde est chargé. Absent = page de login.
+// #hud existe dans le DOM dès le bootstrap mais est caché tant que la page
+// de login est affichée (body.is-loading-game-assets). On ne peut donc PAS
+// se baser sur sa seule présence : il faut vérifier la visibilité réelle.
+
+function isElementVisible(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  if (el.hidden) return false;
+  const s = getComputedStyle(el);
+  if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false;
+  return el.getClientRects().length > 0;
+}
+
 function isLoginPage(): boolean {
-  if (document.getElementById("hud")) return false;
-  // Signal fort : bouton "Sign In" natif visible
+  // 1. Si le HUD est réellement visible → on est en jeu
+  const hud = document.getElementById("hud");
+  if (hud && isElementVisible(hud)) return false;
+
+  // 2. Boutons de login (visibles = page de login)
   const signIn = document.getElementById("signInFromStartBtn");
-  if (signIn) {
-    const s = getComputedStyle(signIn);
-    if (s.display !== "none" && s.visibility !== "hidden") return true;
-  }
-  // Fallback : pas de canvas = pas encore entré dans le monde
-  return !document.querySelector("#gameGpu");
+  if (signIn && isElementVisible(signIn)) return true;
+
+  const guest = document.getElementById("continueGuestBtn");
+  if (guest && isElementVisible(guest)) return true;
+
+  // 3. Fallback : panneau de choix de compte visible
+  const account = document.getElementById("accountChoicePanel");
+  if (account && isElementVisible(account)) return true;
+
+  return false;
 }
 
 // ─── State ───
@@ -251,7 +270,7 @@ function buildPanel(): HTMLElement {
       coop.continueAsGuest();
     } else {
       const native = document.querySelector<HTMLButtonElement>(
-        "#continueAsGuestBtn, [data-action='continueAsGuest']"
+        "#continueGuestBtn"
       );
       if (native) native.click();
       else alert("continueAsGuest indisponible — le jeu n'est pas encore chargé");
