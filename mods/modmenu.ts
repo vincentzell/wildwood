@@ -26,6 +26,50 @@ function applyMaxWidth(panel: HTMLElement): void {
 }
 
 /**
+ * Cache le modmenu par défaut et le révèle via un clic sur le cœur du profil
+ * joueur (.profile-heart-total). L'overlay de login (#mod-login-overlay)
+ * n'est jamais touché : il reste visible sur la page de login pour l'injection
+ * de token.
+ */
+function installHeartToggle(panel: HTMLElement): void {
+  if (panel.dataset.heartToggle === "1") return;
+  panel.dataset.heartToggle = "1";
+
+  let revealed = false;
+
+  const findHeartZone = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>(".profile-heart-total");
+
+  const apply = () => {
+    panel.style.display = revealed ? "" : "none";
+    // Force le movable HUD à recalculer sa position quand on toggle
+    window.dispatchEvent(new Event("resize"));
+  };
+
+  const attach = () => {
+    const zone = findHeartZone();
+    if (!zone || zone.dataset.modmenuAnchor === "1") return;
+    zone.dataset.modmenuAnchor = "1";
+    zone.style.cursor = "pointer";
+    zone.style.userSelect = "none";
+    zone.title = "Click pour ouvrir les mods";
+    zone.addEventListener("click", (e) => {
+      e.stopPropagation();
+      revealed = !revealed;
+      apply();
+    });
+  };
+
+  // État initial : caché
+  apply();
+  attach();
+
+  // Le modal de profil est re-rendu à chaque ouverture → réattacher le listener
+  const obs = new MutationObserver(attach);
+  obs.observe(document.body, { childList: true, subtree: true });
+}
+
+/**
  * Menu flottant des mods, avec onglets par catégorie.
  * Rejoue la mécanique du stat tracker : classe `.stat-tracker`,
  * ancré dans `#hud`, déplaçable via `installMovableHudCard`.
@@ -107,6 +151,7 @@ export function installModMenu(): void {
 
   panel.append(header, tabsBar, content);
   hud.append(panel);
+  installHeartToggle(panel);
   applyMaxWidth(panel);
   window.addEventListener("resize", () => {
     applyMaxWidth(panel);
