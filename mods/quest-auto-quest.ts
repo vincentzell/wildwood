@@ -6,6 +6,7 @@ const STORAGE_KEY = "wildwood-mod-auto-quest-enabled";
 const COLLECT_GUILD_KEY = "wildwood-mod-auto-quest-collect-guild-enabled";
 const POLL_INTERVAL_MS = 10_000;
 const GUILD_RETRY_COOLDOWN_MS = 60_000;
+const POOL_EMPTY_RECHECK_MS = 5 * 60_000;  // 5 min de backoff quand pool vide / ready=false
 const QUEST_WAIT_MS = 60_000;
 const TRAVEL_WAIT_MS = 15_000;
 const TICK_MS = 2_000;
@@ -72,6 +73,7 @@ function getCoop(): CoopLike | null {
 
 let lastGuildAttemptTs = 0;
 let lastSeenDay = -1;
+let poolEmptyUntil = 0;
 
 function isCollectGuildEnabled(): boolean {
   try {
@@ -87,6 +89,8 @@ function setCollectGuildEnabled(value: boolean): void {
   } catch {
     // Ignore unavailable local storage.
   }
+  // Reset du backoff pool vide quand l'utilisateur réactive
+  if (value) poolEmptyUntil = 0;
 }
 
 export function isAutoQuestEnabled(): boolean {
@@ -111,31 +115,29 @@ function activeQuests(coop: CoopLike): CoopQuest[] {
 }
 
 /**
- * Collecte depuis la pool de guild quests. Source de vérité :
+ * Collecte depuis la pool de guild quests. Source de vérité serveur :
  *   loadGuild().guild.questCollect.{ready, pool, poolSize}
  *
- * `ready` est calculé par le serveur — il est true si :
- *   - le joueur a fini ses 15 quêtes perso
- *   - il a moins de 15 guild quests en cours
- *   - la pool n'est pas vide
- *
- * On fait confiance à `ready` et on laisse le serveur décider.
- * Pas de cap côté client, pas de heuristique "3 échecs = pool vide".
+ * `ready` est calculé par le serveur. On lui fait confiance — pas d'heuristique
+ * côté client. Le throttle `POOL_EMPTY_RECHECK_MS` évite de spammer loadGuild()
+ * quand le serveur dit qu'il n'y a rien à collecter.
  */
 async function tryCollectGuild(coop: CoopLike): Promise<void> {
   if (!isCollectGuildEnabled()) return;
+  if (Date.now() < poolEmptyUntil) return;
   if (Date.now() - lastGuildAttemptTs < GUILD_RETRY_COOLDOWN_MS) return;
 
   const data = coop.weeklyQuests?.();
   if (!data?.quests || !data.guildName) return;
 
-  // Reset au changement de semaine (juste informatif)
+  // Reset au changement de semaine
   if (data.day !== lastSeenDay) {
     lastSeenDay = data.day;
+    poolEmptyUntil = 0;
     console.info("[mod-auto-quest] nouvelle semaine de quêtes");
   }
 
-  // Vérifs client rapides avant l'appel API
+  // Vérifications client rapides (évitent des appels API inutiles)
   const perso = data.quests.filter(quest => !quest.from);
   if (perso.length === 0) return;
   const allDone = perso.every(quest => quest.progress >= quest.target);
@@ -152,7 +154,11 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   const identity = coop.localIdentity?.();
   if (!identity || !coop.guild?.guildAction) return;
 
-  // Lecture de l'état serveur (API, pas DOM)
+  // ⚠️ Cooldown armé AVANT loadGuild() — sinon un return précoce (pool vide,
+  // ready=false) laisserait lastGuildAttemptTs à 0 et l'API serait rappelée
+  // à chaque tick de runLoop (10s).
+  lastGuildAttemptTs = Date.now();
+
   let collectState: GuildQuestCollect | undefined;
   try {
     const info = await coop.guild.loadGuild?.();
@@ -162,22 +168,17 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   }
 
   if (collectState) {
-    if (!collectState.ready) {
-      // Le serveur dit non — pool vide, ou autre condition serveur
+    if (!collectState.ready || collectState.pool === 0) {
       console.info(
         `[mod-auto-quest] collecte indisponible ` +
-        `(pool ${collectState.pool}/${collectState.poolSize}, ready=false)`
+        `(pool ${collectState.pool}/${collectState.poolSize}, ready=${collectState.ready}) ` +
+        `— re-check dans ${Math.round(POOL_EMPTY_RECHECK_MS / 60_000)} min`
       );
-      return;
-    }
-    if (collectState.pool === 0) {
-      console.info(`[mod-auto-quest] pool épuisée (0/${collectState.poolSize}) — rien à collecter`);
+      poolEmptyUntil = Date.now() + POOL_EMPTY_RECHECK_MS;
       return;
     }
   }
-  // Si loadGuild a échoué, on tente quand même — le serveur refusera si pas possible
 
-  lastGuildAttemptTs = Date.now();
   try {
     const result = await coop.guild.guildAction({ kind: "collectQuests", identity });
     if (result?.ok) {
@@ -186,13 +187,17 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
       const freshActive = fresh?.quests.filter(q =>
         q.progress < q.target && !q.takenBy && (q.enemy || q.stat)
       ) ?? [];
-      const poolInfo = collectState ? `pool ${collectState.pool}/${collectState.poolSize}` : "pool ?";
+      const poolInfo = collectState
+        ? `pool ${collectState.pool}/${collectState.poolSize}`
+        : "pool ?";
       console.info(
         `[mod-auto-quest] collecte OK · ${freshCollected.length} guild quests au total · ` +
         `${freshActive.length} à farmer · ${poolInfo}`
       );
     } else {
-      console.warn(`[mod-auto-quest] collecte refusée : ${result?.error ?? "sans message"}`);
+      console.warn(
+        `[mod-auto-quest] collecte refusée : ${result?.error ?? "sans message"}`
+      );
     }
   } catch (error) {
     console.warn("[mod-auto-quest] collecte exception", error);
@@ -294,6 +299,8 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   }
   await new Promise(resolve => setTimeout(resolve, 800));
 
+  // Résolution de la stat : directe pour les guild quests, via ENEMY_TYPES
+  // pour les kill quests.
   let stat: string | null = null;
   if (quest.stat) {
     stat = quest.stat;
