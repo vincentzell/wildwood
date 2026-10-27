@@ -7,6 +7,7 @@ const AD_CHECK_INTERVAL_MS = 30_000;
 type CoopLike = {
   claimAdGems?: () => Promise<{ ok?: boolean; error?: string }>;
   gemBalance?: () => { gems?: number };
+  isConnected?: () => boolean;
 };
 
 function getCoop(): CoopLike | null {
@@ -28,9 +29,7 @@ export function isAutoAdEnabled(): boolean {
 let adRunning = false;
 let intervalId: number | null = null;
 let warnedNoApi = false;
-/** Timestamp (ms) avant lequel on ne retente pas (limite journalière atteinte). */
-let limitUntilMs = 0;
-let lastLimitLog = 0;
+let lastErrorLog = 0;
 
 function isVisible(el: HTMLElement | null): boolean {
   if (!el) return false;
@@ -40,42 +39,44 @@ function isVisible(el: HTMLElement | null): boolean {
   return el.getClientRects().length > 0;
 }
 
-/** Parse "resets in HH:MM:SS" → ms, ou null si le pattern est absent. */
-function parseResetMs(label: string): number | null {
-  const m = label.match(/resets in (\d+):(\d+):(\d+)/);
-  if (!m) return null;
-  const ms = (parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10)) * 1000;
-  return Number.isFinite(ms) ? ms : null;
+/**
+ * Parse "N left today" depuis l'aria-label du bouton.
+ * Ex : "Watch ad · +10 Gems · 4 left today" → 4
+ */
+function parseAdsLeft(label: string): number | null {
+  const m = label.match(/(\d+)\s+left today/i);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 type AdState =
-  | { kind: "available" }
-  | { kind: "limit"; resetMs: number | null }
-  | { kind: "absent" };
+  | { kind: "available"; adsLeft: number | null }
+  | { kind: "empty" }      // quota journalier à 0
+  | { kind: "absent" };    // bouton pas dans le DOM / pas visible
 
-/** Inspecte le bouton natif pour déterminer si une pub est réellement disponible. */
+/**
+ * Source de vérité : le label du bouton natif.
+ *   "N left today" avec N > 0 → pubs dispo
+ *   "N left today" avec N = 0 → quota épuisé, reset demain
+ *   bouton disabled / data-state=limit → idem
+ */
 function readAdState(): AdState {
   const btn = document.getElementById("enemyRespawnAdBtn") as HTMLButtonElement | null;
   if (!btn) return { kind: "absent" };
   if (!isVisible(btn)) return { kind: "absent" };
 
-  // data-state="limit" = quota journalier épuisé (bouton reste visible + disabled)
-  if (btn.dataset.state === "limit" || btn.disabled) {
-    const label = btn.getAttribute("aria-label") || btn.getAttribute("title") || "";
-    return { kind: "limit", resetMs: parseResetMs(label) };
-  }
-  return { kind: "available" };
+  const label = btn.getAttribute("aria-label") || btn.getAttribute("title") || "";
+  const adsLeft = parseAdsLeft(label);
+
+  if (adsLeft !== null && adsLeft > 0) return { kind: "available", adsLeft };
+  if (adsLeft === 0) return { kind: "empty" };
+  if (btn.dataset.state === "limit" || btn.disabled) return { kind: "empty" };
+  // Label sans "N left", bouton actif → on tente quand même
+  return { kind: "available", adsLeft: null };
 }
 
 async function tryClaimAd(): Promise<void> {
   if (adRunning) return;
   if (!isAutoAdEnabled()) return;
-
-  // Backoff actif : on attend le reset sans spammer le DOM toutes les 30s
-  if (limitUntilMs > 0) {
-    if (Date.now() < limitUntilMs) return;
-    limitUntilMs = 0; // reset passé, on réessaie
-  }
 
   const coop = getCoop();
   if (!coop?.claimAdGems) {
@@ -87,36 +88,34 @@ async function tryClaimAd(): Promise<void> {
   }
 
   const state = readAdState();
-  if (state.kind === "absent") return;
-  if (state.kind === "limit") {
-    // Programme le backoff jusqu'au reset (+10s de marge)
-    if (state.resetMs !== null) {
-      limitUntilMs = Date.now() + state.resetMs + 10_000;
-    } else {
-      // Reset inconnu → au moins 1h de backoff
-      limitUntilMs = Date.now() + 60 * 60 * 1000;
-    }
-    // Log une seule fois par heure max
-    if (Date.now() - lastLimitLog > 60 * 60 * 1000) {
-      lastLimitLog = Date.now();
-      const until = new Date(limitUntilMs).toLocaleTimeString("fr-FR", { hour12: false });
-      console.info(`[mod-auto-ad] limite atteinte, reprise après ${until}`);
-    }
-    return;
-  }
+  // "absent" : bouton pas à l'écran, rien à faire (l'utilisateur est ailleurs)
+  // "empty"  : quota 0, reset demain — inutile de spammer l'API
+  if (state.kind === "absent" || state.kind === "empty") return;
 
-  // state.kind === "available"
+  // "available" : au moins 1 pub → claim
   adRunning = true;
   try {
     const result = await coop.claimAdGems();
     if (result && result.ok === false && result.error) {
-      // Cas "no ad available" → pas de log, mais on pourrait backoff court
-      if (!/no ad|unavailable|not available|limit/i.test(result.error)) {
-        console.warn("[mod-auto-ad] claim refusé:", result.error);
+      // Erreurs "attendues" : silence (auth pas prête, race avec l'UI, etc.)
+      if (!/no ad|unavailable|not available|limit|not.?connected|unauthori[sz]ed/i.test(result.error)) {
+        const now = Date.now();
+        if (now - lastErrorLog > 60_000) {
+          lastErrorLog = now;
+          console.warn("[mod-auto-ad] claim refusé:", result.error);
+        }
       }
+    } else if (result?.ok) {
+      console.info(
+        `[mod-auto-ad] ✅ claim OK (avait ${state.adsLeft ?? "?"} pubs dispo)`
+      );
     }
-  } catch {
-    // silencieux : le prochain tick retentera
+  } catch (e) {
+    const now = Date.now();
+    if (now - lastErrorLog > 60_000) {
+      lastErrorLog = now;
+      console.warn("[mod-auto-ad] claim exception:", (e as Error).message);
+    }
   } finally {
     adRunning = false;
   }
@@ -135,7 +134,6 @@ function stopPolling(): void {
     window.clearInterval(intervalId);
     intervalId = null;
   }
-  limitUntilMs = 0;
 }
 
 export function registerAutoAdMod(): void {
