@@ -9,6 +9,7 @@ const GUILD_RETRY_COOLDOWN_MS = 60_000;
 const QUEST_WAIT_MS = 60_000;
 const TRAVEL_WAIT_MS = 15_000;
 const TICK_MS = 2_000;
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 type QuestPhase = "idle" | "scanning" | "traveling" | "farming" | "waiting";
 
@@ -55,6 +56,9 @@ function getCoop(): CoopLike | null {
 }
 
 let lastGuildAttemptTs = 0;
+let lastSeenDay = -1;
+let poolExhausted = false;
+let consecutiveFailures = 0;
 
 function isCollectGuildEnabled(): boolean {
   try {
@@ -70,6 +74,11 @@ function setCollectGuildEnabled(value: boolean): void {
   } catch {
     // Ignore unavailable local storage.
   }
+  // Reset l'état pool quand l'utilisateur réactive (permet une tentative fraîche)
+  if (value) {
+    poolExhausted = false;
+    consecutiveFailures = 0;
+  }
 }
 
 export function isAutoQuestEnabled(): boolean {
@@ -84,16 +93,8 @@ export function isAutoQuestEnabled(): boolean {
 function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
-  // On farme les DEUX types de quêtes :
-  //  - perso (from undefined)      : quêtes hebdo individuelles, ont `enemy`
-  //  - guild (from = "your guild") : quêtes collectées, ont `stat` (pas d'`enemy`)
-  //
-  // Le serveur renvoie pour les guild quests :
-  //   { mapId, stat: "speed"|"armor"|"crit"|"damage"|"health"|"regen", target, progress, from: "your guild" }
-  // Ces quêtes progressent en farmant le groupe d'aggro `stat:<nom>` sur la
-  // bonne map (vérifié manuellement).
-  //
-  // On skip les quêtes déjà prises par un autre joueur (takenBy).
+  // Une quête est farmable si elle est incomplète, non prise, et a un
+  // `enemy` (kill quest) OU un `stat` (guild stat quest).
   return data.quests.filter(q =>
     q.progress < q.target &&
     !q.takenBy &&
@@ -101,18 +102,34 @@ function activeQuests(coop: CoopLike): CoopQuest[] {
   );
 }
 
+/**
+ * Collecte depuis le pool de guild quests. Le serveur n'a PAS de cap dur
+ * sur le nombre cumulé : tant que la pool n'est pas vide, on peut collecter
+ * de nouveaux lots après avoir farmé le précédent. On s'arrête uniquement
+ * quand le serveur refuse 3 fois de suite (pool épuisé pour la semaine).
+ */
 async function tryCollectGuild(coop: CoopLike): Promise<void> {
   if (!isCollectGuildEnabled()) return;
   if (Date.now() - lastGuildAttemptTs < GUILD_RETRY_COOLDOWN_MS) return;
+
   const data = coop.weeklyQuests?.();
   if (!data?.quests || !data.guildName) return;
+
+  // Reset au changement de semaine
+  if (data.day !== lastSeenDay) {
+    lastSeenDay = data.day;
+    poolExhausted = false;
+    consecutiveFailures = 0;
+    console.info("[mod-auto-quest] nouvelle semaine de quêtes — reset état pool");
+  }
+
+  if (poolExhausted) return;
+
   const perso = data.quests.filter(quest => !quest.from);
-  const collected = data.quests.filter(quest => quest.from);
-  // Ne pas tenter la collecte si on est déjà à 15/15.
-  if (collected.length >= 15) return;
   if (perso.length === 0) return;
   const allDone = perso.every(quest => quest.progress >= quest.target);
   if (!allDone) return;
+
   const identity = coop.localIdentity?.();
   if (!identity || !coop.guild?.guildAction) return;
 
@@ -120,12 +137,62 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   try {
     const result = await coop.guild.guildAction({ kind: "collectQuests", identity });
     if (result?.ok) {
-      console.info(`[mod-auto-quest] guild quests collectées (${collected.length}/15)`);
+      // Re-fetch pour vérifier qu'on a réellement de nouvelles quêtes à farmer
+      const fresh = coop.weeklyQuests?.();
+      const freshActive = fresh?.quests.filter(q =>
+        q.progress < q.target && !q.takenBy && (q.enemy || q.stat)
+      ) ?? [];
+      const freshCollected = fresh?.quests.filter(q => q.from) ?? [];
+
+      if (freshActive.length > 0) {
+        consecutiveFailures = 0;
+        console.info(
+          `[mod-auto-quest] guild quests collectées ` +
+          `(${freshCollected.length} collectées au total, ${freshActive.length} à farmer)`
+        );
+      } else {
+        // Serveur a dit ok mais rien à farmer → soit fini, soit rien donné
+        consecutiveFailures++;
+        console.warn(
+          `[mod-auto-quest] collecte OK mais rien à farmer ` +
+          `(${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`
+        );
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          poolExhausted = true;
+          console.info(
+            `[mod-auto-quest] pool épuisé (${MAX_CONSECUTIVE_FAILURES} essais sans résultat) ` +
+            `— arrêt jusqu'au reset hebdo`
+          );
+        }
+      }
     } else {
-      console.warn(`[mod-auto-quest] collecte guild refusée : ${result?.error ?? "sans message"}`);
+      consecutiveFailures++;
+      const error = result?.error ?? "sans message";
+      console.warn(
+        `[mod-auto-quest] collecte guild refusée ` +
+        `(${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}) : ${error}`
+      );
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        poolExhausted = true;
+        console.info(
+          `[mod-auto-quest] pool épuisé (${MAX_CONSECUTIVE_FAILURES} échecs consécutifs) ` +
+          `— arrêt jusqu'au reset hebdo`
+        );
+      }
     }
   } catch (error) {
-    console.warn("[mod-auto-quest] collecte guild exception", error);
+    consecutiveFailures++;
+    console.warn(
+      `[mod-auto-quest] collecte guild exception ` +
+      `(${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`, error
+    );
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      poolExhausted = true;
+      console.info(
+        `[mod-auto-quest] pool épuisé (${MAX_CONSECUTIVE_FAILURES} exceptions consécutives) ` +
+        `— arrêt jusqu'au reset hebdo`
+      );
+    }
   }
 }
 
@@ -224,8 +291,6 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   }
   await new Promise(resolve => setTimeout(resolve, 800));
 
-  // Résolution de la stat : directe pour les guild quests, via ENEMY_TYPES
-  // pour les kill quests.
   let stat: string | null = null;
   if (quest.stat) {
     stat = quest.stat;
@@ -254,7 +319,6 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   while (Date.now() < deadline && !abort) {
     await new Promise(resolve => setTimeout(resolve, TICK_MS));
     if (coop.localState?.()?.hp === 0) break;
-    // Match enemy OU stat selon le type de quête.
     const current = coop.weeklyQuests?.()?.quests.find(q => {
       if (q.mapId !== quest.mapId || q.target !== quest.target) return false;
       if (quest.enemy && q.enemy === quest.enemy) return true;
@@ -333,6 +397,7 @@ function renderStatus(): HTMLElement {
   stateLine.textContent = (isAutoQuestEnabled() ? stateMap[currentPhase] : "Désactivé") + " · " + advanceState;
   wrap.append(stateLine);
 
+  // Collect guild quests + état pool
   const guildRow = document.createElement("label");
   guildRow.style.cssText =
     "display:flex;align-items:center;gap:4px;margin:4px 0;font-size:10px;cursor:pointer;";
@@ -340,7 +405,10 @@ function renderStatus(): HTMLElement {
   guildCheckbox.type = "checkbox";
   guildCheckbox.checked = isCollectGuildEnabled();
   guildCheckbox.addEventListener("change", () => setCollectGuildEnabled(guildCheckbox.checked));
-  guildRow.append(guildCheckbox, document.createTextNode("Collect guild quests"));
+  let poolSuffix = "";
+  if (poolExhausted) poolSuffix = " · pool épuisé";
+  else if (consecutiveFailures > 0) poolSuffix = ` · ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES} échecs`;
+  guildRow.append(guildCheckbox, document.createTextNode("Collect guild quests" + poolSuffix));
   wrap.append(guildRow);
 
   const coop = getCoop();
@@ -355,7 +423,8 @@ function renderStatus(): HTMLElement {
     if (perso.length > 0 && persoDone === perso.length) {
       empty.textContent =
         `✓ ${persoDone}/${perso.length} perso terminées · ` +
-        `${guild.length} guild quests · collecte ${isCollectGuildEnabled() ? "active" : "désactivée"}`;
+        `${guild.length} guild quests · ` +
+        `collecte ${isCollectGuildEnabled() ? (poolExhausted ? "pool vide" : "active") : "désactivée"}`;
     } else {
       empty.textContent = "Aucune quête active";
     }
