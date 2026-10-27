@@ -11,7 +11,6 @@ import { registerAutoFarmAllCardsMod } from "./card-auto-farm";
 import { registerAutoFarmTargetCardsMod } from "./card-auto-target";
 import { registerAutoTechTreeMod } from "./misc-auto-tech-tree";
 import { registerAutoUpgradeMod } from "./misc-auto-upgrade";
-import { registerOpenDevMod } from "./misc-open-dev";
 import { REGISTERED_MODS } from "./registry";
 import { registerLoginInjectMod } from "./misc-login-inject";
 import { registerTradeMarketMod } from "./trade-market";
@@ -32,7 +31,6 @@ export function installAllMods(): void {
   registerAutoFarmTargetCardsMod();
   registerAutoTechTreeMod();
   registerAutoUpgradeMod();
-  registerOpenDevMod();
 
    registerLoginInjectMod();
   registerTradeMarketMod();
