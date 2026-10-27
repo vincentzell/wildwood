@@ -6,10 +6,12 @@ const STORAGE_KEY = "wildwood-mod-auto-quest-enabled";
 const COLLECT_GUILD_KEY = "wildwood-mod-auto-quest-collect-guild-enabled";
 const POLL_INTERVAL_MS = 10_000;
 const GUILD_RETRY_COOLDOWN_MS = 60_000;
-const POOL_EMPTY_RECHECK_MS = 5 * 60_000;  // 5 min de backoff quand pool vide / ready=false
+const POOL_EMPTY_RECHECK_MS = 5 * 60_000;
 const QUEST_WAIT_MS = 60_000;
 const TRAVEL_WAIT_MS = 15_000;
 const TICK_MS = 2_000;
+const LOG_LIMIT = 100;
+const LOG_DISPLAY = 20;
 
 type QuestPhase = "idle" | "scanning" | "traveling" | "farming" | "waiting";
 
@@ -17,10 +19,23 @@ let currentPhase: QuestPhase = "idle";
 let currentQuestEnemy = "";
 let currentQuestMap = "";
 
+type LogEntry = { ts: string; msg: string; cls: "info" | "ok" | "warn" | "bad" };
+let questLogs: LogEntry[] = [];
+
+function logQuest(msg: string, cls: LogEntry["cls"] = "info"): void {
+  const ts = new Date().toLocaleTimeString("fr-FR", { hour12: false });
+  questLogs.push({ ts, msg, cls });
+  if (questLogs.length > LOG_LIMIT) questLogs.shift();
+  const p = "[mod-auto-quest]";
+  if (cls === "bad") console.error(p, msg);
+  else if (cls === "warn") console.warn(p, msg);
+  else console.info(p, msg);
+}
+
 type CoopQuest = {
   mapId: string;
-  enemy?: string;      // undefined pour les guild stat quests
-  stat?: string;       // "speed" | "armor" | "crit" | "damage" | "health" | "regen"
+  enemy?: string;
+  stat?: string;
   target: number;
   progress: number;
   takenBy?: string;
@@ -74,6 +89,7 @@ function getCoop(): CoopLike | null {
 let lastGuildAttemptTs = 0;
 let lastSeenDay = -1;
 let poolEmptyUntil = 0;
+let lastKnownCollectState: GuildQuestCollect | null = null;
 
 function isCollectGuildEnabled(): boolean {
   try {
@@ -89,7 +105,6 @@ function setCollectGuildEnabled(value: boolean): void {
   } catch {
     // Ignore unavailable local storage.
   }
-  // Reset du backoff pool vide quand l'utilisateur réactive
   if (value) poolEmptyUntil = 0;
 }
 
@@ -97,7 +112,7 @@ export function isAutoQuestEnabled(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEY) === "true";
   } catch (error) {
-    console.warn("[mod-auto-quest] lecture du réglage impossible", error);
+    logQuest("⚠ lecture du réglage impossible: " + (error as Error).message, "warn");
     return false;
   }
 }
@@ -105,8 +120,6 @@ export function isAutoQuestEnabled(): boolean {
 function activeQuests(coop: CoopLike): CoopQuest[] {
   const data = coop.weeklyQuests?.();
   if (!data?.quests) return [];
-  // Une quête est farmable si elle est incomplète, non prise, et a un
-  // `enemy` (kill quest) OU un `stat` (guild stat quest).
   return data.quests.filter(q =>
     q.progress < q.target &&
     !q.takenBy &&
@@ -114,14 +127,6 @@ function activeQuests(coop: CoopLike): CoopQuest[] {
   );
 }
 
-/**
- * Collecte depuis la pool de guild quests. Source de vérité serveur :
- *   loadGuild().guild.questCollect.{ready, pool, poolSize}
- *
- * `ready` est calculé par le serveur. On lui fait confiance — pas d'heuristique
- * côté client. Le throttle `POOL_EMPTY_RECHECK_MS` évite de spammer loadGuild()
- * quand le serveur dit qu'il n'y a rien à collecter.
- */
 async function tryCollectGuild(coop: CoopLike): Promise<void> {
   if (!isCollectGuildEnabled()) return;
   if (Date.now() < poolEmptyUntil) return;
@@ -130,49 +135,37 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
   const data = coop.weeklyQuests?.();
   if (!data?.quests || !data.guildName) return;
 
-  // Reset au changement de semaine
   if (data.day !== lastSeenDay) {
     lastSeenDay = data.day;
     poolEmptyUntil = 0;
-    console.info("[mod-auto-quest] nouvelle semaine de quêtes");
+    logQuest("📅 nouvelle semaine de quêtes (day=" + data.day + ")", "info");
   }
 
-  // Vérifications client rapides (évitent des appels API inutiles)
   const perso = data.quests.filter(quest => !quest.from);
   if (perso.length === 0) return;
   const allDone = perso.every(quest => quest.progress >= quest.target);
   if (!allDone) return;
 
-  const currentlyHeld = data.quests.filter(q => q.from).length;
-  if (currentlyHeld >= 15) {
-    console.info(
-      `[mod-auto-quest] ${currentlyHeld}/15 guild quests en cours — on farme d'abord`
-    );
-    return;
-  }
-
   const identity = coop.localIdentity?.();
   if (!identity || !coop.guild?.guildAction) return;
 
-  // ⚠️ Cooldown armé AVANT loadGuild() — sinon un return précoce (pool vide,
-  // ready=false) laisserait lastGuildAttemptTs à 0 et l'API serait rappelée
-  // à chaque tick de runLoop (10s).
   lastGuildAttemptTs = Date.now();
 
   let collectState: GuildQuestCollect | undefined;
   try {
     const info = await coop.guild.loadGuild?.();
     collectState = info?.guild?.questCollect;
+    lastKnownCollectState = collectState ?? null;
   } catch (error) {
-    console.warn("[mod-auto-quest] loadGuild exception", error);
+    logQuest("❌ loadGuild exception: " + (error as Error).message, "bad");
   }
 
   if (collectState) {
     if (!collectState.ready || collectState.pool === 0) {
-      console.info(
-        `[mod-auto-quest] collecte indisponible ` +
-        `(pool ${collectState.pool}/${collectState.poolSize}, ready=${collectState.ready}) ` +
-        `— re-check dans ${Math.round(POOL_EMPTY_RECHECK_MS / 60_000)} min`
+      const min = Math.round(POOL_EMPTY_RECHECK_MS / 60_000);
+      logQuest(
+        `📦 pool ${collectState.pool}/${collectState.poolSize} · ready=${collectState.ready} — backoff ${min}min`,
+        "info"
       );
       poolEmptyUntil = Date.now() + POOL_EMPTY_RECHECK_MS;
       return;
@@ -190,17 +183,18 @@ async function tryCollectGuild(coop: CoopLike): Promise<void> {
       const poolInfo = collectState
         ? `pool ${collectState.pool}/${collectState.poolSize}`
         : "pool ?";
-      console.info(
-        `[mod-auto-quest] collecte OK · ${freshCollected.length} guild quests au total · ` +
-        `${freshActive.length} à farmer · ${poolInfo}`
+      logQuest(
+        `📦 +${freshActive.length} guild quests · total ${freshCollected.length} · ${poolInfo}`,
+        "ok"
       );
     } else {
-      console.warn(
-        `[mod-auto-quest] collecte refusée : ${result?.error ?? "sans message"}`
+      logQuest(
+        `⚠ collecte refusée : ${result?.error ?? "sans message"}`,
+        "warn"
       );
     }
   } catch (error) {
-    console.warn("[mod-auto-quest] collecte exception", error);
+    logQuest("❌ collecte exception: " + (error as Error).message, "bad");
   }
 }
 
@@ -274,7 +268,7 @@ async function travelTo(coop: CoopLike, mapId: string): Promise<boolean> {
     const ok = await coop.travelToMap(mapId);
     if (!ok) return false;
   } catch (error) {
-    console.warn(`[mod-auto-quest] voyage vers ${mapId} impossible`, error);
+    logQuest("⚠ voyage " + mapId + " impossible: " + (error as Error).message, "warn");
     return false;
   }
   const start = Date.now();
@@ -293,14 +287,16 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
   currentPhase = "traveling";
   currentQuestEnemy = quest.enemy ?? (quest.stat ? `guild:${quest.stat}` : "?");
   currentQuestMap = quest.mapId;
+
+  const label = quest.enemy ?? `guild:${quest.stat}`;
+  logQuest(`🚶 → ${quest.mapId} · ${label}`, "info");
+
   if (!(await travelTo(coop, quest.mapId))) {
-    console.warn(`[mod-auto-quest] voyage vers ${quest.mapId} échoué`);
+    logQuest(`⚠ voyage ${quest.mapId} échoué`, "warn");
     return false;
   }
   await new Promise(resolve => setTimeout(resolve, 800));
 
-  // Résolution de la stat : directe pour les guild quests, via ENEMY_TYPES
-  // pour les kill quests.
   let stat: string | null = null;
   if (quest.stat) {
     stat = quest.stat;
@@ -309,26 +305,30 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
     stat = def?.reward.type ?? null;
   }
   if (!stat) {
-    console.warn(`[mod-auto-quest] stat introuvable pour ${quest.enemy ?? quest.stat ?? "?"}`);
+    logQuest(`⚠ stat introuvable pour ${label}`, "warn");
     return false;
   }
   if (!ensureFarmPanelOpen()) return false;
   const group = `stat:${stat}`;
   if (!setAggroGroup(group)) {
-    console.warn(`[mod-auto-quest] groupe ${group} introuvable`);
+    logQuest(`⚠ groupe ${group} introuvable`, "warn");
     return false;
   }
   disableMoveOn();
   if (!startFarm()) {
-    console.warn("[mod-auto-quest] démarrage du farm refusé");
+    logQuest(`⚠ start farm refusé (${label})`, "warn");
     return false;
   }
+  logQuest(`⛏ farm ${label} · ${group}`, "info");
   currentPhase = "farming";
 
   const deadline = Date.now() + QUEST_WAIT_MS;
   while (Date.now() < deadline && !abort) {
     await new Promise(resolve => setTimeout(resolve, TICK_MS));
-    if (coop.localState?.()?.hp === 0) break;
+    if (coop.localState?.()?.hp === 0) {
+      logQuest("💀 mort pendant le farm", "warn");
+      break;
+    }
     const current = coop.weeklyQuests?.()?.quests.find(q => {
       if (q.mapId !== quest.mapId || q.target !== quest.target) return false;
       if (quest.enemy && q.enemy === quest.enemy) return true;
@@ -337,15 +337,18 @@ async function tryOneQuest(coop: CoopLike, quest: CoopQuest): Promise<boolean> {
     });
     if (current?.progress !== undefined && current.progress >= current.target) {
       currentPhase = "waiting";
+      logQuest(`✅ ${label} terminée (${current.progress}/${current.target})`, "ok");
       return true;
     }
   }
+  logQuest(`⏱ ${label} non finie en ${QUEST_WAIT_MS / 1000}s`, "warn");
   return false;
 }
 
 async function runLoop(coop: CoopLike): Promise<void> {
   running = true;
   abort = false;
+  logQuest("▶ boucle démarrée", "ok");
   try {
     while (!abort && isAutoQuestEnabled()) {
       currentPhase = "scanning";
@@ -356,6 +359,7 @@ async function runLoop(coop: CoopLike): Promise<void> {
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
         continue;
       }
+      logQuest(`🔍 ${quests.length} quête(s) à farmer · cible: ${quests[0].enemy ?? `guild:${quests[0].stat}`}`, "info");
       const ok = await tryOneQuest(coop, quests[0]);
       if (ok) currentPhase = "waiting";
       if (!ok && !abort) await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -365,6 +369,7 @@ async function runLoop(coop: CoopLike): Promise<void> {
     restoreMoveOn();
     currentPhase = "idle";
     running = false;
+    logQuest("⏹ boucle terminée", "info");
   }
 }
 
@@ -373,8 +378,13 @@ function startPolling(): void {
   const tick = () => {
     if (!isAutoQuestEnabled() || running) return;
     const coop = getCoop();
-    if (!coop) return;
-    void runLoop(coop).catch(error => console.error("[mod-auto-quest] boucle interrompue", error));
+    if (!coop) {
+      logQuest("⚠ coop indisponible", "warn");
+      return;
+    }
+    void runLoop(coop).catch(error =>
+      logQuest("❌ boucle interrompue: " + (error as Error).message, "bad")
+    );
   };
   intervalId = window.setInterval(tick, POLL_INTERVAL_MS);
   tick();
@@ -407,6 +417,19 @@ function renderStatus(): HTMLElement {
   stateLine.textContent = (isAutoQuestEnabled() ? stateMap[currentPhase] : "Désactivé") + " · " + advanceState;
   wrap.append(stateLine);
 
+  // Pool status (lu depuis le cache du dernier loadGuild)
+  if (lastKnownCollectState) {
+    const poolLine = document.createElement("div");
+    poolLine.style.cssText =
+      "font-size:9px;margin:2px 0;padding:2px 4px;border-radius:3px;" +
+      "background:rgba(0,0,0,.25);" +
+      "color:" + (lastKnownCollectState.ready ? "#69e56f" : "#ffd85b") + ";";
+    poolLine.textContent =
+      `📦 pool ${lastKnownCollectState.pool}/${lastKnownCollectState.poolSize} · ` +
+      `ready=${lastKnownCollectState.ready}`;
+    wrap.append(poolLine);
+  }
+
   const guildRow = document.createElement("label");
   guildRow.style.cssText =
     "display:flex;align-items:center;gap:4px;margin:4px 0;font-size:10px;cursor:pointer;";
@@ -426,45 +449,94 @@ function renderStatus(): HTMLElement {
     const perso = data?.quests.filter(q => !q.from) ?? [];
     const guild = data?.quests.filter(q => q.from) ?? [];
     const persoDone = perso.filter(q => q.progress >= q.target).length;
+    const guildDone = guild.filter(q => q.progress >= q.target).length;
     if (perso.length > 0 && persoDone === perso.length) {
       empty.textContent =
         `✓ ${persoDone}/${perso.length} perso terminées · ` +
-        `${guild.length} guild quests · ` +
+        `${guildDone}/${guild.length} guild finies · ` +
         `collecte ${isCollectGuildEnabled() ? "active" : "désactivée"}`;
     } else {
       empty.textContent = "Aucune quête active";
     }
     wrap.append(empty);
-    return wrap;
+  } else {
+    for (const quest of quests) {
+      const isCurrent = currentPhase === "farming"
+        && (quest.enemy ? quest.enemy === currentQuestEnemy : `guild:${quest.stat}` === currentQuestEnemy)
+        && quest.mapId === currentQuestMap;
+      const row = document.createElement("div");
+      row.style.cssText =
+        "padding:2px 0;font-size:10px;line-height:1.3;" +
+        (isCurrent ? "color:#69e56f;" : "");
+      const line1 = document.createElement("div");
+      line1.style.cssText = "display:flex;justify-content:space-between;gap:6px;";
+      const name = document.createElement("span");
+      const label = quest.enemy ?? (quest.stat ? `guild ${quest.stat}` : "?");
+      name.textContent = (isCurrent ? "▶ " : "") + label;
+      name.style.fontWeight = isCurrent ? "700" : "500";
+      const progress = document.createElement("span");
+      progress.style.opacity = ".85";
+      progress.textContent = `${quest.progress}/${quest.target}`;
+      line1.append(name, progress);
+      const line2 = document.createElement("div");
+      line2.style.cssText = `opacity:.6;font-size:9px;padding-left:${isCurrent ? "12px" : "0"}`;
+      const stat = quest.enemy
+        ? (ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES]?.reward.type ?? "?")
+        : (quest.stat ?? "?");
+      line2.textContent = `${quest.mapId} · ${stat}`;
+      row.append(line1, line2);
+      wrap.append(row);
+    }
   }
 
-  for (const quest of quests) {
-    const isCurrent = currentPhase === "farming"
-      && (quest.enemy ? quest.enemy === currentQuestEnemy : `guild:${quest.stat}` === currentQuestEnemy)
-      && quest.mapId === currentQuestMap;
-    const row = document.createElement("div");
-    row.style.cssText =
-      "padding:2px 0;font-size:10px;line-height:1.3;" +
-      (isCurrent ? "color:#69e56f;" : "");
-    const line1 = document.createElement("div");
-    line1.style.cssText = "display:flex;justify-content:space-between;gap:6px;";
-    const name = document.createElement("span");
-    const label = quest.enemy ?? (quest.stat ? `guild ${quest.stat}` : "?");
-    name.textContent = (isCurrent ? "▶ " : "") + label;
-    name.style.fontWeight = isCurrent ? "700" : "500";
-    const progress = document.createElement("span");
-    progress.style.opacity = ".85";
-    progress.textContent = `${quest.progress}/${quest.target}`;
-    line1.append(name, progress);
-    const line2 = document.createElement("div");
-    line2.style.cssText = `opacity:.6;font-size:9px;padding-left:${isCurrent ? "12px" : "0"}`;
-    const stat = quest.enemy
-      ? (ENEMY_TYPES[quest.enemy as keyof typeof ENEMY_TYPES]?.reward.type ?? "?")
-      : (quest.stat ?? "?");
-    line2.textContent = `${quest.mapId} · ${stat}`;
-    row.append(line1, line2);
-    wrap.append(row);
+  // ─── Fenêtre de log ───────────────────────────────────────────────────
+  if (questLogs.length > 0) {
+    const logs = document.createElement("div");
+    logs.style.cssText =
+      "margin-top:6px;max-height:130px;overflow-y:auto;" +
+      "background:rgba(0,0,0,.3);padding:3px;border-radius:3px;" +
+      "font-size:9px;line-height:1.35;font-family:monospace;";
+    for (const l of questLogs.slice(-LOG_DISPLAY)) {
+      const line = document.createElement("div");
+      line.textContent = `[${l.ts}] ${l.msg}`;
+      line.style.color =
+        l.cls === "ok" ? "#69e56f"
+        : l.cls === "warn" ? "#ffd85b"
+        : l.cls === "bad" ? "#ff6767"
+        : "#8aa8c8";
+      logs.append(line);
+    }
+    wrap.append(logs);
   }
+
+  // Bouton "Copier log"
+  const btnCopy = document.createElement("button");
+  btnCopy.textContent = "📋 Copier log";
+  btnCopy.style.cssText =
+    "margin-top:4px;padding:3px 6px;font:inherit;cursor:pointer;" +
+    "background:rgba(116,216,255,.22);color:inherit;border:0;" +
+    "border-radius:3px;font-size:10px;width:100%;";
+  btnCopy.addEventListener("click", async () => {
+    if (questLogs.length === 0) return;
+    const header =
+      "=== DIAG AUTO-QUEST ===\n" +
+      "Timestamp: " + new Date().toISOString() + "\n" +
+      "Phase: " + currentPhase + "\n" +
+      "Current: " + (currentQuestEnemy || "-") + " @ " + (currentQuestMap || "-") + "\n" +
+      "Pool: " + (lastKnownCollectState ? `${lastKnownCollectState.pool}/${lastKnownCollectState.poolSize} ready=${lastKnownCollectState.ready}` : "?") + "\n" +
+      "--- LOGS ---\n";
+    const body = questLogs.map(l => `[${l.ts}] (${l.cls}) ${l.msg}`).join("\n");
+    try {
+      await navigator.clipboard.writeText(header + body);
+      btnCopy.textContent = "✅ Copié";
+      setTimeout(() => { btnCopy.textContent = "📋 Copier log"; }, 2000);
+    } catch {
+      btnCopy.textContent = "❌ Voir console";
+      setTimeout(() => { btnCopy.textContent = "📋 Copier log"; }, 2000);
+    }
+  });
+  wrap.append(btnCopy);
+
   return wrap;
 }
 
@@ -480,10 +552,14 @@ export function registerAutoQuestMod(): void {
         try {
           localStorage.setItem(STORAGE_KEY, String(value));
         } catch (error) {
-          console.warn("[mod-auto-quest] enregistrement du réglage impossible", error);
+          logQuest("⚠ enregistrement du réglage impossible: " + (error as Error).message, "warn");
         }
-        if (value) startPolling();
-        else stopPolling();
+        if (value) {
+          questLogs = [];  // session fraîche
+          startPolling();
+        } else {
+          stopPolling();
+        }
       },
     },
     status: { render: renderStatus, intervalMs: 1_500 },
