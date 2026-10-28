@@ -25,12 +25,6 @@ function applyMaxWidth(panel: HTMLElement): void {
   panel.style.maxWidth = `${cap}px`;
 }
 
-/**
- * Cache le modmenu par défaut et le révèle via un clic sur le cœur du profil
- * joueur (.profile-heart-total). L'overlay de login (#mod-login-overlay)
- * n'est jamais touché : il reste visible sur la page de login pour l'injection
- * de token.
- */
 function installHeartToggle(panel: HTMLElement): void {
   if (panel.dataset.heartToggle === "1") return;
   panel.dataset.heartToggle = "1";
