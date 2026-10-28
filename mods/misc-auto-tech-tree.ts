@@ -162,37 +162,70 @@ async function walkTo(
 
 // ─── Détection tree ─────────────────────────────────────────────────────
 function findResearchTreeButton(): HTMLElement | null {
-  const selectors = [
-    "button[data-research-id]:not([disabled])",
-    ".research-tree [data-research-id]",
-    "#researchTree [data-research-id]",
-    "[class*='research-tree'] button:not([disabled])",
-    "[id*='research-tree'] button:not([disabled])",
-    "dialog[open] button[data-research-id]",
-    "[class*='research-station'] button",
-    "[id*='research-station'] button",
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector<HTMLElement>(sel);
-    if (el && isVisible(el)) return el;
-  }
+  // Le tree est une <section class="tech-tree-window">, pas des <button data-research-id>
+  const tree = document.querySelector<HTMLElement>(".tech-tree-window");
+  if (tree && isVisible(tree)) return tree;
   return null;
 }
 
 function findAvailableUpgrade(): HTMLButtonElement | null {
-  const candidates = document.querySelectorAll<HTMLButtonElement>(
-    "button[data-research-id]:not([disabled])"
-  );
-  for (const btn of candidates) {
-    if (!isVisible(btn)) continue;
-    if (btn.getAttribute("aria-pressed") === "true") continue;
-    if (btn.getAttribute("aria-disabled") === "true") continue;
-    if (btn.classList.contains("is-owned")
-        || btn.classList.contains("is-maxed")
-        || btn.classList.contains("is-locked")) continue;
-    return btn;
+  // Niveau 1 : si le dialog détail est ouvert, cliquer le bouton de research dedans
+  const detail = document.getElementById("techTreeDetail");
+  if (detail && !detail.hasAttribute("hidden")) {
+    const btns = detail.querySelectorAll<HTMLButtonElement>("button:not([disabled])");
+    for (const btn of btns) {
+      if (btn.id === "closeTechTreeDetailBtn") continue;
+      if (isVisible(btn)) return btn;
+    }
+  }
+  // Niveau 2 : sinon, cliquer une catégorie ready (Power / Utility)
+  const categories = document.querySelectorAll<HTMLButtonElement>(".tech-tree-choice.is-ready");
+  for (const btn of categories) {
+    if (isVisible(btn)) return btn;
   }
   return null;
+}
+
+/**
+ * Le tree est dessiné sur un canvas (#techTreeCanvas). On dispatch des clics
+ * en grille jusqu'à ce que #techTreeDetail s'ouvre (clic sur un node).
+ */
+async function clickCanvasNode(): Promise<boolean> {
+  const viewport = document.getElementById("techTreeViewport");
+  const canvas = document.getElementById("techTreeCanvas") as HTMLCanvasElement | null;
+  const map = document.getElementById("techTreeMap");
+  if (!canvas || !viewport || viewport.hasAttribute("hidden")) return false;
+
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+
+  // Grille de positions candidates (x%, y%) — du bas (racine) vers le haut
+  const positions: Array<[number, number]> = [
+    [0.5, 0.85], [0.5, 0.70], [0.5, 0.55], [0.5, 0.40], [0.5, 0.25],
+    [0.30, 0.85], [0.70, 0.85], [0.30, 0.70], [0.70, 0.70],
+    [0.25, 0.50], [0.75, 0.50], [0.5, 0.15],
+  ];
+
+  for (const [px, py] of positions) {
+    const x = rect.left + rect.width * px;
+    const y = rect.top + rect.height * py;
+
+    for (const target of [canvas, map].filter(Boolean) as HTMLElement[]) {
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+        target.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0,
+        }));
+      }
+    }
+    await sleep(400);
+
+    const detail = document.getElementById("techTreeDetail");
+    if (detail && !detail.hasAttribute("hidden")) {
+      logTech("📋 detail ouvert (clic " + Math.round(px * 100) + "% × " + Math.round(py * 100) + "%)", "ok");
+      return true;
+    }
+  }
+  return false;
 }
 
 function describeActiveResearch(active: unknown): string | null {
@@ -284,10 +317,26 @@ async function handleReadyHint(coop: CoopLike): Promise<void> {
 
     const upgradeBtn = findAvailableUpgrade();
     if (!upgradeBtn) { logTech("⚠ aucun upgrade cliquable", "warn"); return; }
-    const upgradeId = upgradeBtn.dataset.researchId ?? upgradeBtn.textContent?.trim() ?? "?";
-    logTech("🎯 upgrade : " + upgradeId);
+    const upgradeLabel = upgradeBtn.dataset.researchTree ?? upgradeBtn.textContent?.trim().slice(0, 30) ?? "?";
+    logTech("🎯 clic : " + upgradeLabel);
     upgradeBtn.click();
-    await sleep(POST_ACTION_WAIT_MS);
+    await sleep(800);
+
+    const viewport = document.getElementById("techTreeViewport");
+    if (viewport && !viewport.hasAttribute("hidden")) {
+      logTech("🎨 canvas ouvert — tentative clic sur node");
+      const opened = await clickCanvasNode();
+      if (!opened) {
+        logTech("⚠ aucun node trouvé sur le canvas — clic manuel requis", "warn");
+        return;
+      }
+      const researchBtn = findAvailableUpgrade();
+      if (researchBtn) {
+        logTech("🔬 clic research : " + (researchBtn.textContent?.trim().slice(0, 30) ?? "?"));
+        researchBtn.click();
+        await sleep(POST_ACTION_WAIT_MS);
+      }
+    }
 
     const newActive = coop.activeResearch?.();
     if (newActive) {
@@ -512,3 +561,4 @@ export function registerAutoTechTreeMod(): void {
     install: () => { if (isAutoTechTreeEnabled()) startPolling(); },
   });
 }
+// [patched:tech-tree-canvas]
