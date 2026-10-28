@@ -2,9 +2,8 @@
 import { RESEARCH_IDS, researchIsAvailable, type ResearchId, type ResearchRanks } from "../shared/research";
 import { REGISTERED_MODS } from "./registry";
 import { acquireMutex, isPausedFor, readMutex } from "./lib/mod-mutex";
-
 import { TOWN_RESEARCH_POSITION } from "../shared/town";
-// [patched:research-position-v2]
+
 const STORAGE_KEY = "wildwood-mod-auto-tech-tree-enabled";
 const POLL_MS = 10_000;
 const LOG_LIMIT = 100;
@@ -12,9 +11,10 @@ const LOG_DISPLAY = 20;
 
 const READY_HINT_ID = "researchReadyHint";
 const TOWN_MAP_ID = "town";
-// TOWN_RESEARCH_POSITION remplacé par TOWN_RESEARCH_POSITION (import)
 const TRAVEL_TIMEOUT_MS = 10_000;
 const TREE_OPEN_TIMEOUT_MS = 5_000;
+const WALK_TIMEOUT_MS = 8_000;
+const STATION_REACH = 45;
 const POST_ACTION_WAIT_MS = 1_500;
 const MUTEX_TTL_MS = 60_000;
 
@@ -31,6 +31,7 @@ type CoopLike = {
 type LogEntry = { ts: string; msg: string; cls: "info" | "ok" | "warn" | "bad" };
 
 let techLogs: LogEntry[] = [];
+let apiStale = false;
 
 function logTech(msg: string, cls: LogEntry["cls"] = "info"): void {
   const ts = new Date().toLocaleTimeString("fr-FR", { hour12: false });
@@ -72,7 +73,7 @@ async function waitFor(check: () => boolean, timeoutMs: number): Promise<boolean
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (check()) return true;
-    await sleep(200);
+    await sleep(150);
   }
   return false;
 }
@@ -85,6 +86,81 @@ function isVisible(el: HTMLElement | null): boolean {
   return el.getClientRects().length > 0;
 }
 
+// ─── Touches clavier ────────────────────────────────────────────────────
+const KEYCODES: Record<string, number> = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39 };
+const activeKeys = new Set<string>();
+
+function dispatchKey(type: "keydown" | "keyup", key: string): void {
+  const canvas = document.querySelector<HTMLCanvasElement>("#gameGpu")
+    || document.querySelector<HTMLCanvasElement>("canvas");
+  const evt = new KeyboardEvent(type, {
+    key, code: key, keyCode: KEYCODES[key] || 0, which: KEYCODES[key] || 0,
+    bubbles: true, cancelable: true, composed: true,
+  });
+  window.dispatchEvent(evt);
+  if (canvas) try { canvas.dispatchEvent(evt); } catch { /* idem */ }
+}
+
+function setKeys(wanted: string[]): void {
+  const canvas = document.querySelector<HTMLCanvasElement>("#gameGpu")
+    || document.querySelector<HTMLCanvasElement>("canvas");
+  try { canvas?.focus({ preventScroll: true }); } catch { /* idem */ }
+  for (const k of Array.from(activeKeys)) {
+    if (!wanted.includes(k)) { dispatchKey("keyup", k); activeKeys.delete(k); }
+  }
+  for (const k of wanted) {
+    if (!activeKeys.has(k)) { dispatchKey("keydown", k); activeKeys.add(k); }
+  }
+}
+
+function releaseAllKeys(): void {
+  for (const k of Array.from(activeKeys)) { dispatchKey("keyup", k); activeKeys.delete(k); }
+}
+
+function directionToKeys(angleRad: number): string[] {
+  const deg = (angleRad * 180 / Math.PI + 360) % 360;
+  if (deg >= 337.5 || deg < 22.5) return ["ArrowRight"];
+  if (deg >= 22.5 && deg < 67.5) return ["ArrowDown", "ArrowRight"];
+  if (deg >= 67.5 && deg < 112.5) return ["ArrowDown"];
+  if (deg >= 112.5 && deg < 157.5) return ["ArrowDown", "ArrowLeft"];
+  if (deg >= 157.5 && deg < 202.5) return ["ArrowLeft"];
+  if (deg >= 202.5 && deg < 247.5) return ["ArrowUp", "ArrowLeft"];
+  if (deg >= 247.5 && deg < 292.5) return ["ArrowUp"];
+  return ["ArrowUp", "ArrowRight"];
+}
+
+async function walkTo(
+  coop: CoopLike,
+  targetX: number,
+  targetY: number,
+  timeoutMs: number,
+  reach = STATION_REACH,
+): Promise<boolean> {
+  const start = Date.now();
+  releaseAllKeys();
+  while (Date.now() - start < timeoutMs) {
+    const st = coop.localState?.();
+    if (!st) { await sleep(100); continue; }
+    const dx = targetX - (st.x ?? 0);
+    const dy = targetY - (st.y ?? 0);
+    const dist = Math.hypot(dx, dy);
+    if (dist < reach) {
+      releaseAllKeys();
+      logTech("✅ arrivé station (dist=" + Math.round(dist) + "px)", "ok");
+      return true;
+    }
+    const keys = directionToKeys(Math.atan2(dy, dx));
+    setKeys(keys);
+    await sleep(100);
+  }
+  releaseAllKeys();
+  const st = coop.localState?.();
+  const dist = Math.hypot(targetX - (st?.x ?? 0), targetY - (st?.y ?? 0));
+  logTech("⚠ timeout marche (dist restant=" + Math.round(dist) + "px)", "warn");
+  return false;
+}
+
+// ─── Détection tree ─────────────────────────────────────────────────────
 function findResearchTreeButton(): HTMLElement | null {
   const selectors = [
     "button[data-research-id]:not([disabled])",
@@ -93,6 +169,8 @@ function findResearchTreeButton(): HTMLElement | null {
     "[class*='research-tree'] button:not([disabled])",
     "[id*='research-tree'] button:not([disabled])",
     "dialog[open] button[data-research-id]",
+    "[class*='research-station'] button",
+    "[id*='research-station'] button",
   ];
   for (const sel of selectors) {
     const el = document.querySelector<HTMLElement>(sel);
@@ -137,10 +215,11 @@ function describeActiveResearch(active: unknown): string | null {
   return id ? "▶ " + id : null;
 }
 
+// ─── Flow Research Ready ────────────────────────────────────────────────
 async function handleReadyHint(coop: CoopLike): Promise<void> {
   const current = readMutex();
   if (current && current.holder !== MODULE_ID) {
-    logTech("⏸ verrou tenu par " + current.holder + " (" + current.reason + ")", "warn");
+    logTech("⏸ verrou tenu par " + current.holder, "warn");
     return;
   }
 
@@ -153,53 +232,49 @@ async function handleReadyHint(coop: CoopLike): Promise<void> {
 
     const prevMapId = coop.localState?.()?.mapId ?? null;
     const prevPos = coop.localState?.() ?? null;
-    logTech("📍 position avant : " + (prevMapId ?? "?") + " (" + Math.round(prevPos?.x ?? 0) + "," + Math.round(prevPos?.y ?? 0) + ")");
+    logTech("📍 avant : " + (prevMapId ?? "?") + " (" + Math.round(prevPos?.x ?? 0) + "," + Math.round(prevPos?.y ?? 0) + ")");
     logTech("🎯 cible : (" + Math.round(TOWN_RESEARCH_POSITION.x) + "," + Math.round(TOWN_RESEARCH_POSITION.y) + ")");
 
     hint.click();
-    logTech("👆 clic sur Research Ready (téléport direct attendu)");
+    logTech("👆 clic hint");
 
-    // Vérifie qu'on a bougé : delta de position > 500 px OU proche de la station
-    const moved = await waitFor(() => {
-      const st = coop.localState?.();
-      if (!st) return false;
-      const moved = Math.hypot((st.x ?? 0) - (prevPos?.x ?? 0), (st.y ?? 0) - (prevPos?.y ?? 0)) > 500;
-      const nearStation = Math.hypot((st.x ?? 0) - TOWN_RESEARCH_POSITION.x, (st.y ?? 0) - TOWN_RESEARCH_POSITION.y) < 200;
-      return moved || nearStation;
-    }, TRAVEL_TIMEOUT_MS);
-    if (!moved) {
-      const st = coop.localState?.();
-      logTech("❌ téléport non détecté (pos=" + Math.round(st?.x ?? 0) + "," + Math.round(st?.y ?? 0) + ")", "bad");
-      return;
-    }
-    await sleep(500);
+    // Attend que le joueur soit à town (post-téléport)
+    const arrived = await waitFor(() => coop.localState?.()?.mapId === TOWN_MAP_ID, TRAVEL_TIMEOUT_MS);
+    if (!arrived) { logTech("❌ pas à town après téléport", "bad"); return; }
+    await sleep(600);
+
+    // Mesure distance à la station
     const st = coop.localState?.();
-    const distToStation = Math.hypot((st?.x ?? 0) - TOWN_RESEARCH_POSITION.x, (st?.y ?? 0) - TOWN_RESEARCH_POSITION.y);
-    logTech("✅ téléport détecté · pos=(" + Math.round(st?.x ?? 0) + "," + Math.round(st?.y ?? 0) + ") distStation=" + Math.round(distToStation) + "px");
+    const dist = Math.hypot((st?.x ?? 0) - TOWN_RESEARCH_POSITION.x, (st?.y ?? 0) - TOWN_RESEARCH_POSITION.y);
+    logTech("📏 dist station : " + Math.round(dist) + "px");
 
-    // Le tree devrait s'ouvrir automatiquement (proximity). Cherche un bouton.
+    // Marche vers la station si trop loin
+    if (dist > STATION_REACH) {
+      logTech("🚶 marche vers station");
+      const ok = await walkTo(coop, TOWN_RESEARCH_POSITION.x, TOWN_RESEARCH_POSITION.y, WALK_TIMEOUT_MS);
+      if (!ok) { logTech("⚠ marche incomplète, on tente quand même le tree", "warn"); }
+      await sleep(800);
+    }
+
+    // Attend tree
     const treeOpen = await waitFor(() => findResearchTreeButton() !== null, TREE_OPEN_TIMEOUT_MS);
     if (!treeOpen) {
-      logTech("❌ tree pas ouvert — dump DOM pour diag", "bad");
-      // Dump DOM utile pour ajuster findAvailableUpgrade
+      logTech("❌ tree pas ouvert — dump DOM", "bad");
       const dumpSelectors = [
         "button[data-research-id]",
         "[data-research-id]",
         "[class*='research']",
         "[id*='research']",
         "dialog[open]",
-        ".modal",
+        "[class*='station']",
       ];
       for (const sel of dumpSelectors) {
         const els = [...document.querySelectorAll(sel)].filter(e => (e as HTMLElement).offsetParent !== null);
         if (els.length > 0) {
-          logTech("  " + sel + " : " + els.length + " éléments", "info");
+          logTech("  " + sel + " : " + els.length, "info");
           els.slice(0, 5).forEach((e, i) => {
-            const tag = e.tagName;
-            const id = e.id ? "#" + e.id : "";
-            const cls = e.className ? "." + String(e.className).split(" ").slice(0, 2).join(".") : "";
             const txt = (e.textContent || "").trim().slice(0, 40);
-            logTech("    " + i + ": " + tag + id + cls + " · " + txt, "info");
+            logTech("    " + i + ": " + e.tagName + (e.id ? "#" + e.id : "") + " · " + txt, "info");
           });
         }
       }
@@ -210,29 +285,20 @@ async function handleReadyHint(coop: CoopLike): Promise<void> {
     const upgradeBtn = findAvailableUpgrade();
     if (!upgradeBtn) { logTech("⚠ aucun upgrade cliquable", "warn"); return; }
     const upgradeId = upgradeBtn.dataset.researchId ?? upgradeBtn.textContent?.trim() ?? "?";
-    logTech("🎯 upgrade ciblé : " + upgradeId);
+    logTech("🎯 upgrade : " + upgradeId);
     upgradeBtn.click();
     await sleep(POST_ACTION_WAIT_MS);
 
     const newActive = coop.activeResearch?.();
     if (newActive) {
       const desc = describeActiveResearch(newActive);
-      logTech("✅ recherche active : " + (desc ?? "?"), "ok");
+      logTech("✅ actif : " + (desc ?? "?"), "ok");
       lastAction = desc ?? "Recherche en cours";
     } else {
       logTech("⚠ pas de recherche active après upgrade", "warn");
     }
-
-    if (prevMapId && prevMapId !== TOWN_MAP_ID && coop.travelToMap) {
-      logTech("🔙 retour " + prevMapId);
-      try {
-        await coop.travelToMap(prevMapId);
-        logTech("✅ retour " + prevMapId, "ok");
-      } catch (e) {
-        logTech("⚠ retour échoué : " + (e as Error).message, "warn");
-      }
-    }
   } finally {
+    releaseAllKeys();
     release();
     logTech("🔓 verrou libéré", "info");
   }
@@ -242,22 +308,24 @@ function pickResearchToStart(ranks: ResearchRanks): ResearchId | null {
   return RESEARCH_IDS.find(id => researchIsAvailable(id, ranks)) ?? null;
 }
 
+// ─── Tick principal ─────────────────────────────────────────────────────
 async function tick(): Promise<void> {
   if (running || !isAutoTechTreeEnabled() || Date.now() - lastAttemptTs < POLL_MS) return;
   const coop = getCoop();
   if (!coop) return;
-
   if (isPausedFor(MODULE_ID)) return;
 
   running = true;
   lastAttemptTs = Date.now();
   try {
+    // 1. Priorité absolue : hint visible → flow UI
     const hint = document.getElementById(READY_HINT_ID) as HTMLButtonElement | null;
     if (hint && isVisible(hint)) {
       await handleReadyHint(coop);
       return;
     }
 
+    // 2. Recherche active → juste logger
     if (coop.activeResearch?.()) {
       const desc = describeActiveResearch(coop.activeResearch());
       if (desc && desc !== lastAction) {
@@ -267,34 +335,36 @@ async function tick(): Promise<void> {
       return;
     }
 
-    if (!coop.startResearch || !coop.research) {
-      if (lastError !== "API indisponible") {
-        lastError = "API indisponible";
-        logTech("⚠ API startResearch/research indisponible", "warn");
-      }
-      return;
-    }
+    // 3. API fallback (skip si stale)
+    if (apiStale) return;
+    if (!coop.startResearch || !coop.research) return;
 
     const ranks = coop.research();
     const target = pickResearchToStart(ranks);
     if (!target) {
       if (lastAction !== "Aucune recherche disponible") {
         lastAction = "Aucune recherche disponible";
-        logTech("⚠ aucune recherche disponible via API", "warn");
+        logTech("⚠ aucune recherche dispo via API", "warn");
       }
-      lastError = "";
       return;
     }
 
-    logTech("▶ tentative API démarrage " + target);
+    logTech("▶ tentative API " + target);
     const result = await coop.startResearch(target);
     if (result.ok) {
       lastError = "";
       lastAction = "▶ " + target;
       logTech("✅ " + target + " démarrée (API)", "ok");
     } else {
-      lastError = result.error ?? "Refus serveur";
-      logTech("❌ API refusée : " + lastError, "bad");
+      const err = result.error ?? "Refus serveur";
+      // Détecte "WildStat updated" → API stale, on arrête de spammer
+      if (/wildstat updated|refresh to continue/i.test(err)) {
+        apiStale = true;
+        logTech("⚠ API stale ('WildStat updated') — mode UI only jusqu'au reload", "warn");
+      } else {
+        lastError = err;
+        logTech("❌ API refusée : " + err, "bad");
+      }
     }
   } catch (error) {
     lastError = error instanceof Error ? error.message : String(error);
@@ -317,6 +387,7 @@ function stopPolling(): void {
   }
 }
 
+// ─── UI ─────────────────────────────────────────────────────────────────
 function renderStatus(): HTMLElement {
   const wrap = document.createElement("div");
   if (!isAutoTechTreeEnabled()) {
@@ -348,6 +419,13 @@ function renderStatus(): HTMLElement {
     readyLine.style.cssText = "font-size:10px;color:#69e56f;font-weight:900;margin-bottom:3px;";
     readyLine.textContent = "🔔 Research Ready — clic imminent";
     wrap.append(readyLine);
+  }
+
+  if (apiStale) {
+    const staleLine = document.createElement("div");
+    staleLine.style.cssText = "font-size:10px;color:#ffd85b;margin-bottom:3px;";
+    staleLine.textContent = "⚠ API stale — reload pour réactiver";
+    wrap.append(staleLine);
   }
 
   const line = document.createElement("div");
@@ -392,6 +470,7 @@ function renderStatus(): HTMLElement {
       "=== DIAG AUTO TECH TREE ===\n" +
       "Timestamp: " + new Date().toISOString() + "\n" +
       "Running: " + running + " | Last action: " + lastAction + " | Error: " + (lastError || "-") + "\n" +
+      "API stale: " + apiStale + "\n" +
       "--- LOGS ---\n";
     const body = techLogs.map(l => "[" + l.ts + "] (" + l.cls + ") " + l.msg).join("\n");
     try {
@@ -422,6 +501,7 @@ export function registerAutoTechTreeMod(): void {
         } catch { /* idem */ }
         if (value) {
           techLogs = [];
+          apiStale = false;
           startPolling();
         } else {
           stopPolling();
