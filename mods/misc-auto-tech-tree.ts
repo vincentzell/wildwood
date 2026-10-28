@@ -3,6 +3,8 @@ import { RESEARCH_IDS, researchIsAvailable, type ResearchId, type ResearchRanks 
 import { REGISTERED_MODS } from "./registry";
 import { acquireMutex, isPausedFor, readMutex } from "./lib/mod-mutex";
 
+import { TOWN_RESEARCH_POSITION } from "../shared/town";
+// [patched:research-position-v2]
 const STORAGE_KEY = "wildwood-mod-auto-tech-tree-enabled";
 const POLL_MS = 10_000;
 const LOG_LIMIT = 100;
@@ -10,9 +12,7 @@ const LOG_DISPLAY = 20;
 
 const READY_HINT_ID = "researchReadyHint";
 const TOWN_MAP_ID = "town";
-const TOWN_POSITION = { x: 5780, y: 5305 };
-const UP_DURATION_MS = 1_000;
-const ARRIVAL_RADIUS_PX = 100;
+// TOWN_RESEARCH_POSITION remplacé par TOWN_RESEARCH_POSITION (import)
 const TRAVEL_TIMEOUT_MS = 10_000;
 const TREE_OPEN_TIMEOUT_MS = 5_000;
 const POST_ACTION_WAIT_MS = 1_500;
@@ -85,26 +85,6 @@ function isVisible(el: HTMLElement | null): boolean {
   return el.getClientRects().length > 0;
 }
 
-async function pushArrowUp(durationMs: number): Promise<void> {
-  const canvas = document.querySelector<HTMLCanvasElement>("#gameGpu")
-    || document.querySelector<HTMLCanvasElement>("canvas");
-  try { canvas?.focus({ preventScroll: true }); } catch { /* idem */ }
-
-  const kd = new KeyboardEvent("keydown", {
-    key: "ArrowUp", code: "ArrowUp", keyCode: 38, which: 38,
-    bubbles: true, cancelable: true, composed: true,
-  });
-  window.dispatchEvent(kd);
-  try { canvas?.dispatchEvent(kd); } catch { /* idem */ }
-  await sleep(durationMs);
-  const ku = new KeyboardEvent("keyup", {
-    key: "ArrowUp", code: "ArrowUp", keyCode: 38, which: 38,
-    bubbles: true, cancelable: true, composed: true,
-  });
-  window.dispatchEvent(ku);
-  try { canvas?.dispatchEvent(ku); } catch { /* idem */ }
-}
-
 function findResearchTreeButton(): HTMLElement | null {
   const selectors = [
     "button[data-research-id]:not([disabled])",
@@ -172,30 +152,59 @@ async function handleReadyHint(coop: CoopLike): Promise<void> {
     if (!hint || !isVisible(hint)) return;
 
     const prevMapId = coop.localState?.()?.mapId ?? null;
-    logTech("📍 position avant : " + (prevMapId ?? "?"));
+    const prevPos = coop.localState?.() ?? null;
+    logTech("📍 position avant : " + (prevMapId ?? "?") + " (" + Math.round(prevPos?.x ?? 0) + "," + Math.round(prevPos?.y ?? 0) + ")");
+    logTech("🎯 cible : (" + Math.round(TOWN_RESEARCH_POSITION.x) + "," + Math.round(TOWN_RESEARCH_POSITION.y) + ")");
 
     hint.click();
-    logTech("👆 clic sur Research Ready");
+    logTech("👆 clic sur Research Ready (téléport direct attendu)");
 
-    const arrived = await waitFor(() => coop.localState?.()?.mapId === TOWN_MAP_ID, TRAVEL_TIMEOUT_MS);
-    if (!arrived) { logTech("❌ téléportation town timeout", "bad"); return; }
-    logTech("✅ téléporté à town");
-
-    const atPos = await waitFor(() => {
+    // Vérifie qu'on a bougé : delta de position > 500 px OU proche de la station
+    const moved = await waitFor(() => {
       const st = coop.localState?.();
       if (!st) return false;
-      const d = Math.hypot((st.x ?? 0) - TOWN_POSITION.x, (st.y ?? 0) - TOWN_POSITION.y);
-      return d < ARRIVAL_RADIUS_PX;
+      const moved = Math.hypot((st.x ?? 0) - (prevPos?.x ?? 0), (st.y ?? 0) - (prevPos?.y ?? 0)) > 500;
+      const nearStation = Math.hypot((st.x ?? 0) - TOWN_RESEARCH_POSITION.x, (st.y ?? 0) - TOWN_RESEARCH_POSITION.y) < 200;
+      return moved || nearStation;
     }, TRAVEL_TIMEOUT_MS);
-    if (!atPos) logTech("⚠ position town pas exacte, continue", "warn");
+    if (!moved) {
+      const st = coop.localState?.();
+      logTech("❌ téléport non détecté (pos=" + Math.round(st?.x ?? 0) + "," + Math.round(st?.y ?? 0) + ")", "bad");
+      return;
+    }
     await sleep(500);
+    const st = coop.localState?.();
+    const distToStation = Math.hypot((st?.x ?? 0) - TOWN_RESEARCH_POSITION.x, (st?.y ?? 0) - TOWN_RESEARCH_POSITION.y);
+    logTech("✅ téléport détecté · pos=(" + Math.round(st?.x ?? 0) + "," + Math.round(st?.y ?? 0) + ") distStation=" + Math.round(distToStation) + "px");
 
-    logTech("⬆️ déplacement UP " + UP_DURATION_MS + "ms");
-    await pushArrowUp(UP_DURATION_MS);
-    await sleep(800);
-
+    // Le tree devrait s'ouvrir automatiquement (proximity). Cherche un bouton.
     const treeOpen = await waitFor(() => findResearchTreeButton() !== null, TREE_OPEN_TIMEOUT_MS);
-    if (!treeOpen) { logTech("❌ tree pas ouvert", "bad"); return; }
+    if (!treeOpen) {
+      logTech("❌ tree pas ouvert — dump DOM pour diag", "bad");
+      // Dump DOM utile pour ajuster findAvailableUpgrade
+      const dumpSelectors = [
+        "button[data-research-id]",
+        "[data-research-id]",
+        "[class*='research']",
+        "[id*='research']",
+        "dialog[open]",
+        ".modal",
+      ];
+      for (const sel of dumpSelectors) {
+        const els = [...document.querySelectorAll(sel)].filter(e => (e as HTMLElement).offsetParent !== null);
+        if (els.length > 0) {
+          logTech("  " + sel + " : " + els.length + " éléments", "info");
+          els.slice(0, 5).forEach((e, i) => {
+            const tag = e.tagName;
+            const id = e.id ? "#" + e.id : "";
+            const cls = e.className ? "." + String(e.className).split(" ").slice(0, 2).join(".") : "";
+            const txt = (e.textContent || "").trim().slice(0, 40);
+            logTech("    " + i + ": " + tag + id + cls + " · " + txt, "info");
+          });
+        }
+      }
+      return;
+    }
     logTech("🌳 tree ouvert");
 
     const upgradeBtn = findAvailableUpgrade();
