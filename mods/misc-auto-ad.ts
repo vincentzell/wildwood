@@ -1,6 +1,11 @@
 // mods/misc-auto-ad.ts
 import { REGISTERED_MODS } from "./registry";
 
+import { isPausedFor } from "./lib/mod-mutex";
+
+// [patched:mutex] ID pour le verrou inter-mods
+const MODULE_ID = "misc-auto-ad";
+
 const STORAGE_KEY = "wildwood-mod-auto-ad-enabled";
 const AD_CHECK_INTERVAL_MS = 5_000;      // poll rapide pour réagir aux fins de cooldown
 const PUB_DURATION_MS = 35_000;          // 30s de pub + 5s de marge
@@ -69,6 +74,7 @@ function parseAdsLeft(label: string): number | null {
  * retourne {ok:true} sans rien créditer (faux positif) ou "Finish the ad first".
  */
 async function runOneAd(): Promise<void> {
+    if (isPausedFor(MODULE_ID)) return;
   const btn = document.getElementById("enemyRespawnAdBtn") as HTMLButtonElement | null;
   if (!btn || !isVisible(btn)) return;
 
@@ -182,7 +188,9 @@ function stopPolling(): void {
 }
 
 export function registerAutoAdMod(): void {
-  REGISTERED_MODS.push({
+// [patched:mutex]
+
+REGISTERED_MODS.push({
     id: "misc-auto-ad",
     name: "Auto Ad",
     category: "MISC",

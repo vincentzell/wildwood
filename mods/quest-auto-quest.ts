@@ -2,6 +2,11 @@
 import { ENEMY_TYPES } from "../src/game/enemies";
 import { REGISTERED_MODS } from "./registry";
 
+import { isPausedFor } from "./lib/mod-mutex";
+
+// [patched:mutex] ID pour le verrou inter-mods
+const MODULE_ID = "quest-auto-quest";
+
 const STORAGE_KEY = "wildwood-mod-auto-quest-enabled";
 const COLLECT_GUILD_KEY = "wildwood-mod-auto-quest-collect-guild-enabled";
 const POLL_INTERVAL_MS = 10_000;
@@ -351,6 +356,11 @@ async function runLoop(coop: CoopLike): Promise<void> {
   logQuest("▶ boucle démarrée", "ok");
   try {
     while (!abort && isAutoQuestEnabled()) {
+      if (isPausedFor(MODULE_ID)) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
       currentPhase = "scanning";
       const quests = activeQuests(coop);
       if (quests.length === 0) {
@@ -541,7 +551,9 @@ function renderStatus(): HTMLElement {
 }
 
 export function registerAutoQuestMod(): void {
-  REGISTERED_MODS.push({
+// [patched:mutex]
+
+REGISTERED_MODS.push({
     id: "quest-auto-quest",
     name: "Auto Quest",
     category: "QUEST",

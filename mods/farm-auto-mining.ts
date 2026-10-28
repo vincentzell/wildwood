@@ -5,6 +5,11 @@
 import { REGISTERED_MODS } from "./registry";
 import { getPlayerCoords } from "./lib/player-coords";
 
+import { isPausedFor } from "./lib/mod-mutex";
+
+// [patched:mutex] ID pour le verrou inter-mods
+const MODULE_ID = "farm-auto-mining";
+
 const STORAGE_KEY = "wildwood-mod-auto-mining-enabled";
 const LIST_KEY = "wildwood-mod-auto-mining-list";
 const STORAGE_KEY_MYST = "wildwood-mod-auto-mining-mysterious";
@@ -452,6 +457,12 @@ async function autoMiningRoutine(): Promise<void> {
     }
 
     while (!autoMiningAbort && autoMiningRunning) {
+      if (isPausedFor(MODULE_ID)) {
+        releaseAllKeys();
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+
       if (Date.now() - start > HARD_CAP_MS) { logAutoMining("⏹️ Hard cap 12h", "warn"); break; }
       if (Date.now() - lastProgressTs > STALL_MS) {
         logAutoMining("⏹️ Stall 20min (dernier : " + lastProgressReason + ")", "warn"); break;
@@ -637,7 +648,9 @@ function renderStatus(): HTMLElement {
 }
 
 export function registerAutoMiningMod(): void {
-  REGISTERED_MODS.push({
+// [patched:mutex]
+
+REGISTERED_MODS.push({
     id: "farm-auto-mining",
     name: "Auto Mining",
     category: "FARM",

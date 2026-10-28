@@ -5,6 +5,11 @@
 import { REGISTERED_MODS } from "./registry";
 import { getPlayerCoords } from "./lib/player-coords";
 
+import { isPausedFor } from "./lib/mod-mutex";
+
+// [patched:mutex] ID pour le verrou inter-mods
+const MODULE_ID = "farm-auto-wood";
+
 const STORAGE_KEY = "wildwood-mod-auto-wood-enabled";
 const LIST_KEY = "wildwood-mod-auto-wood-list";
 const LOG_LIMIT = 80;
@@ -392,6 +397,11 @@ async function autoWoodRoutine(): Promise<void> {
     }
 
     while (!autoWoodAbort && autoWoodRunning) {
+      if (isPausedFor(MODULE_ID)) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
       if (Date.now() - start > HARD_CAP_MS) { logAutoWood("⏹️ Hard cap 12h", "warn"); break; }
       if (Date.now() - lastProgressTs > STALL_MS) {
         logAutoWood("⏹️ Stall 20min (dernier : " + lastProgressReason + ")", "warn"); break;
@@ -546,7 +556,9 @@ function renderStatus(): HTMLElement {
 }
 
 export function registerAutoWoodMod(): void {
-  REGISTERED_MODS.push({
+// [patched:mutex]
+
+REGISTERED_MODS.push({
     id: "farm-auto-wood",
     name: "Auto Wood",
     category: "FARM",
