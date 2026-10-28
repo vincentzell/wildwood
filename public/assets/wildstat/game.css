@@ -9,8 +9,8 @@
   /* Quest tracker: top left under the gem row until dragged. Three quests in play, this map's first and bright. */
   .quest-tracker { position: fixed; top: calc(var(--hud-safe-top) + var(--player-hud-visual-height) + 40px); left: var(--hud-safe-left); z-index: 5; width: min(196px, 46vw); padding: 0 0 4px; border: var(--hud-border) solid var(--hud-frame); border-radius: var(--hud-radius-small); background: var(--hud-surface); box-shadow: var(--ui-shadow); outline: var(--hud-seam); outline-offset: -1px; color: #fff; font: 700 11px/1.25 "Wildstat Chat", sans-serif; pointer-events: auto; }
   .quest-tracker[hidden] { display: none; }
-  /* Under the FPS readout when it shows, the same 4px apart. */
-  body:has(#fpsStatus:not([hidden])) .quest-tracker { top: calc(var(--hud-safe-top) + var(--player-hud-visual-height) + 74px); }
+  /* Under the FPS readout when it shows, the same 4px apart (body.fps-status-shown, app-shell-controller.ts). */
+  body.fps-status-shown .quest-tracker { top: calc(var(--hud-safe-top) + var(--player-hud-visual-height) + 74px); }
   .quest-tracker .quest-tracker-header:active { cursor: grabbing; }
   .quest-tracker.is-world-gesture, .quest-tracker.is-world-gesture * { pointer-events: none; }
   .quest-tracker .quest-tracker-header { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; margin: 0; padding: 4px 8px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: grab; touch-action: none; }
@@ -93,18 +93,46 @@
   .stat-tracker-settings .stat-tracker-opacity { display: grid; gap: 2px; margin: 4px 10px 8px; color: var(--muted); font-size: 11px; }
   .stat-tracker-filters, .stat-tracker-compact-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; margin: 0 10px 8px; padding: 6px 0 0; border: 0; border-top: 1px solid var(--border); }
   .stat-tracker-filters legend, .stat-tracker-compact-options legend { float: left; grid-column: 1 / -1; width: 100%; margin-bottom: 2px; padding: 0; color: var(--muted); font-size: 11px; }
+  .stat-tracker-show-options { margin: 0 10px 8px; border-top: 1px solid var(--border); }
+  .stat-tracker-show-options > summary { padding: 8px 0; cursor: pointer; font: inherit; font-size: 11px; color: var(--muted); }
+  .stat-tracker-show-options > :is(.stat-tracker-filters, .stat-tracker-compact-options) { margin: 0; padding: 0; border: 0; }
   .stat-tracker-settings label:not(.stat-tracker-opacity) { display: flex; align-items: center; gap: 6px; min-height: 28px; cursor: pointer; }
+  .stat-tracker.stat-tracker-settings [hidden] { display: none; }
   .stat-tracker-settings input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--green); cursor: pointer; }
   .stat-tracker:not(.stat-tracker-settings).is-compact { min-width: 0; width: max-content; font-size: 12px; }
   .stat-tracker-stat-icon { display: block; width: 16px; height: 16px; }
+  .stat-tracker-dps { min-width: 0; contain: inline-size; border-top: 1px solid var(--border); opacity: var(--stat-tracker-ink, 1); }
+  .stat-tracker .stat-tracker-view-switch { flex: 0 0 auto; min-width: 32px; padding: 4px; font-size: 18px; }
+  .stat-tracker .stat-tracker-dps-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 4px 6px; font-size: 12px; }
+  .stat-tracker-dps-toggle > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+  .stat-tracker-dps-details { padding: 0 6px 4px; min-width: 0; contain: inline-size; overflow-wrap: anywhere; }
+  .stat-tracker-dps-details dl { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 3px 6px; margin: 0; }
+  .stat-tracker-dps-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; background: linear-gradient(90deg, rgba(255, 255, 255, .14) var(--share, 0%), transparent var(--share, 0%)); }
+  .stat-tracker-dps-details dt, .stat-tracker-dps-details dd { margin: 0; }
+  .stat-tracker-dps-details dt { white-space: nowrap; }
+  .stat-tracker.is-dps-view .stat-tracker-dps, .stat-tracker.is-dps-view .stat-tracker-dps-details { contain: none; }
+  .stat-tracker.is-dps-view .stat-tracker-dps-details dl { grid-template-columns: max-content auto auto; }
+  .stat-tracker.is-dps-view .stat-tracker-dps-toggle > span:first-child { white-space: nowrap; }
+  .stat-tracker-dps-details p { contain: inline-size; }
+  .stat-tracker-dps-details dd { text-align: right; }
+  .stat-tracker-dps-heading, .stat-tracker-dps-details p { color: var(--muted); font-size: 11px; }
+  .stat-tracker-dps-details p { margin: 4px 0; }
+  .stat-tracker-dps-status { display: flex; align-items: center; gap: 6px; }
+  .stat-tracker-dps-status p { flex: 1; min-width: 0; }
+  .stat-tracker .stat-tracker-dps-back { flex: 0 0 auto; padding-inline: 2px; font-size: 11px; }
   .is-position-locked :is(.stat-tracker-handle, .dps-breakdown-handle), .mysterious-ore-timer.is-position-locked .mysterious-ore-timer-handle { cursor: default; }
   .is-position-locked :is(.stat-tracker-handle, .dps-breakdown-handle)::after, .is-position-locked .mysterious-ore-timer-handle::after { content: ""; display: inline-block; width: 10px; height: 12px; margin-left: 5px; vertical-align: -1px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M2 6V4a4 4 0 0 1 8 0v2h1v10H1V6zm2 0h4V4a2 2 0 0 0-4 0z'/%3E%3C/svg%3E") center / contain no-repeat; }
-  .stat-tracker.is-compact header { gap: 4px; padding: 0 4px; }
+  .stat-tracker.is-compact header { gap: 2px; padding: 0 2px; }
+  .stat-tracker.is-compact .stat-tracker-handle { padding-inline: 2px; }
+  .stat-tracker.is-compact .stat-tracker-view-switch { min-width: 24px; padding-inline: 2px; }
+  .stat-tracker.is-compact .stat-tracker-gear { width: 24px; padding-inline: 2px; }
   .stat-tracker.is-compact .stat-tracker-time { color: var(--muted); white-space: nowrap; }
   .stat-tracker.is-compact.is-collapsed .stat-tracker-time { display: none; }
   .stat-tracker.is-compact th, .stat-tracker.is-compact td { padding: 3px 5px; }
   .stat-tracker.is-compact footer { gap: 4px; padding: 0 5px; }
   .stat-tracker-settings .stat-tracker-compact-option { min-height: 44px; margin: 4px 10px 8px; }
+  .stat-tracker-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 4px 10px 8px; }
+  .stat-tracker-settings .stat-tracker-mode-options label { margin: 0; white-space: nowrap; }
   .stat-tracker-settings .stat-tracker-compact-options label { min-height: 28px; margin: 0; }
   .stat-tracker-settings > .stat-tracker-reset { margin: 6px 10px 0; }
   .stat-tracker-prestige-reset { margin: 0 10px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -727,23 +755,29 @@
      own colours showed through), then its outline as a solid image drawn from
      the same line rule as the characters (--galaxy-outline), so the line stays
      black and no sky shows past it. One grid cell stacks them; the sky, the art,
-     the outline and the mask are set inline (galaxyArtStyle in item-presentation.ts). */
+     the outline and the mask are set inline (galaxyArtStyle in item-presentation.ts).
+     The sky is its own layer (.galaxy-sky) two tiles wider and one taller than
+     the icon, slid by transform: the compositor moves it, where a drifting
+     background-position restyled the page every frame. */
   .has-galaxy-finish {
-    display: grid; grid-template: 1fr / 1fr; isolation: isolate;
-    background-size: 96px 96px;
-    background-repeat: repeat;
-    background-position: 0 0;
+    position: relative;
+    display: grid; grid-template: 1fr / 1fr; isolation: isolate; overflow: hidden;
     -webkit-mask-position: center; mask-position: center;
     -webkit-mask-size: contain; mask-size: contain;
     -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
     image-rendering: auto;
+  }
+  .galaxy-sky {
+    position: absolute; z-index: -1; top: -96px; right: 0; bottom: 0; left: -192px;
+    background: var(--galaxy-sky) 0 0 / 96px 96px repeat;
+    pointer-events: none;
     animation: galaxy-art-drift 40s linear infinite;
   }
   .has-galaxy-finish::before, .has-galaxy-finish::after { content: ""; grid-area: 1 / 1; pointer-events: none; }
   .has-galaxy-finish::before { background: var(--galaxy-art) center / contain no-repeat; filter: grayscale(1); mix-blend-mode: overlay; }
   .has-galaxy-finish::after { background: var(--galaxy-outline) center / contain no-repeat; }
-  @keyframes galaxy-art-drift { to { background-position: 192px 96px; } }
-  @media (prefers-reduced-motion: reduce) { .has-galaxy-finish { animation: none; } }
+  @keyframes galaxy-art-drift { to { transform: translate(192px, 96px); } }
+  @media (prefers-reduced-motion: reduce) { .galaxy-sky { animation: none; } }
   /* Where a plain image of the item stood, its galaxy span takes the image's place and size. */
   .item-art-image.has-galaxy-finish { display: grid; }
   .map-guide-drop-art .item-art-image { width: 50px; height: 50px; }
@@ -1330,8 +1364,20 @@
     border-color: #fff0ad;
     border-radius: 5px;
     background: transparent;
-    box-shadow: 0 0 5px rgba(255,206,67,.42), var(--ui-shadow);
+    box-shadow: 0 0 4px rgba(255,206,67,.35), var(--ui-shadow);
     transition: filter 120ms ease, transform 120ms ease;
+  }
+
+  /* The pulse fades a wider glow in and out: opacity runs on the compositor, a box-shadow keyframe repaints every frame.
+     On top (its box is empty), so the play arrow is not lifted into a layer of its own and blurred. */
+  .respawn-ad-glow {
+    position: absolute;
+    z-index: 2;
+    inset: -2px;
+    border-radius: inherit;
+    box-shadow: 0 0 8px rgba(255,215,79,.5);
+    opacity: 0;
+    pointer-events: none;
     animation: respawn-reward-glow 2.8s ease-in-out infinite;
   }
 
@@ -1349,8 +1395,8 @@
   }
 
   @keyframes respawn-reward-glow {
-    0%, 100% { box-shadow: 0 0 4px rgba(255,206,67,.35), var(--ui-shadow); }
-    50% { box-shadow: 0 0 8px rgba(255,215,79,.58), var(--ui-shadow); }
+    0%, 100% { opacity: 0; }
+    50% { opacity: 1; }
   }
 
   .respawn-ad-video-icon::after,
@@ -1552,7 +1598,7 @@
     filter: drop-shadow(0 0 4px var(--item-drop-color)) drop-shadow(0 0 10px var(--item-drop-color));
     image-rendering: pixelated;
   }
-  .item-drop-sprite.has-galaxy-finish { background-size: 96px 96px; background-repeat: repeat; background-position: 0 0; image-rendering: auto; }
+  .item-drop-sprite.has-galaxy-finish { image-rendering: auto; }
 
   .item-drop-name {
     color: var(--item-drop-color);
@@ -1706,6 +1752,9 @@
   .hud-gem-balance { color: #fff; font-size: 11px; font-weight: 900; text-shadow: 0 1px #071c29; }
   .hud-secondary-controls { position: fixed; top: calc(var(--hud-safe-top) + var(--player-hud-visual-height) + 6px); left: var(--hud-safe-left); z-index: 5; display: flex; align-items: center; gap: 3px; pointer-events: auto; }
   .hud-secondary-controls .hud-gem-wallet { position: static; }
+  .hud-arrow-chip { margin: 0; color: #fff; cursor: pointer; pointer-events: auto; touch-action: manipulation; }
+  .hud-arrow-chip[hidden] { display: none; }
+  .hud-arrow-chip.is-empty { opacity: .55; }
   .player-visibility-toggle { display: grid; place-items: center; width: 40px; height: 32px; margin: 0; padding: 6px 9px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: #fff; cursor: pointer; touch-action: manipulation; }
   .player-visibility-toggle svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px #000); }
   .player-visibility-toggle:disabled { opacity: .65; cursor: default; }
@@ -2284,7 +2333,7 @@
   .browser-rewarded-ad-timer { min-width: 4ch; font: 900 clamp(38px, 12vw, 76px)/1 var(--font-rounded); font-variant-numeric: tabular-nums; text-align: center; }
 
   @media (prefers-reduced-motion: reduce) {
-    .respawn-ad-video-icon,
+    .respawn-ad-glow,
     #connectionPanel .wildstat-wordmark-title,
     #accountChoicePanel .wildstat-wordmark-title,
     .claim-card,
@@ -3535,10 +3584,12 @@
   .map-guide-zone-label strong { display: block; overflow: hidden; font-size: 1em; text-overflow: ellipsis; white-space: nowrap; }
   .map-guide-zone-rewards { display: block; margin: 0; font-size: .9em; font-weight: 900; white-space: normal; }
   .map-guide-boss-label { color: #ffad9d; white-space: nowrap; }
+  .map-guide-zone-label.is-place { max-width: none; font-size: 13px; }
   .map-guide-boss-label.is-defeated { opacity: .55; }
   .map-guide-enemies { display: grid; gap: 8px; }
   .map-guide-enemies h3 { margin: 0; color: #fff; font-size: var(--font-readable-title); line-height: 1; }
   .map-guide-drops { display: grid; gap: 8px; }
+  .map-guide-content > section[hidden] { display: none; }
   .map-guide-drops > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .map-guide-drops h3 { margin: 0; color: #fff; font-size: var(--font-readable-title); line-height: 1; }
   .map-guide-drop-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -4727,7 +4778,10 @@
 .dev-player-travel-actions button { flex: 0 0 auto; }
 
 /* The overlay and frame the duel result and profile windows use. */
-.offline-progress-modal { width: var(--game-window-width); max-height: calc(100dvh - 40px); overflow-y: auto; border-color: rgba(198,208,210,.56); }
+.offline-progress-modal { width: var(--game-window-width); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; border-color: rgba(198,208,210,.56); }
+.offline-progress-modal::-webkit-scrollbar { display: none; }
+/* A window taller than the screen starts at its top edge rather than overflowing above it. */
+#offlineProgress { align-content: safe center; }
 .offline-progress-modal h2 { margin: 0; color: #eef1ee; font-size: clamp(19px, 5vw, 28px); }
 .offline-progress-lead { margin: 12px 0 0; color: #d8e4d4; font-size: 12px; line-height: 1.5; }
 .offline-progress-stats { display: grid; gap: 6px; margin: 14px 0; }
@@ -4744,13 +4798,21 @@
 .offline-progress-note { margin: 14px 0; color: #9fa89b; font-size: 11px; line-height: 1.45; }
 .offline-choices { display: grid; gap: 10px; margin: 14px 0 0; }
 .offline-choices:empty { display: none; }
-.offline-choice { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: rgba(0,0,0,.25); text-align: left; }
-.offline-choice-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.offline-choice { border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: rgba(0,0,0,.25); text-align: left; }
+.offline-choice-head { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 0; }
+.offline-choice-toggle { display: grid; flex: 1; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 8px; min-width: 0; min-height: 44px; margin: 0; padding: 4px 4px 4px 10px; border: 0; background: transparent; box-shadow: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.offline-choice-toggle:active { transform: none; }
+.offline-choice-toggle:disabled { cursor: default; }
+/* The same chevron the stat tracker and profile rows use, so the row reads as openable. */
+.offline-choice-toggle::before { content: "\25B8"; grid-row: 1 / 3; align-self: center; color: var(--muted); font-size: 11px; }
+.offline-choice.is-open .offline-choice-toggle::before { content: "\25BE"; }
+.offline-choice-toggle:disabled::before { visibility: hidden; }
 .offline-choice-title { color: #eef1ee; font-size: 15px; font-weight: 900; }
-.offline-choice-detail { color: #c9cfc9; font-size: 13px; text-align: right; }
-.offline-choice .offline-progress-stats { gap: 0; margin: 0; }
+.offline-choice-detail { grid-column: 2; min-width: 0; color: #c9cfc9; font-size: 13px; white-space: pre-line; overflow-wrap: anywhere; }
+.offline-choice .offline-progress-stats { gap: 0; margin: 0; padding: 0 10px 8px; border-top: 1px solid rgba(255,255,255,.1); }
+.offline-choice .offline-progress-stats[hidden] { display: none; }
 .offline-choice .offline-progress-row { padding: 3px 2px; border: 0; border-radius: 0; background: none; font-size: 13px; }
-.offline-choice-collect { justify-self: center; width: min(160px, 100%); border-color: #18371b; background: linear-gradient(#63ad5c, #347536); box-shadow: 0 3px 0 #18371b; }
+.offline-choice-collect { flex: none; width: auto; min-width: 88px; margin: 0; border-color: #18371b; background: linear-gradient(#63ad5c, #347536); box-shadow: 0 3px 0 #18371b; }
 .offline-choice-collect:disabled { border-color: #2d2d2d; background: #3e3e3e; box-shadow: none; color: rgba(236,240,236,.62); }
 
 /* The game's own yes/no prompt, in the frame every other window uses. It is

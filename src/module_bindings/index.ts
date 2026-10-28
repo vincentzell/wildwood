@@ -74,6 +74,7 @@ import CompleteOnboardingStepReducer from "./complete_onboarding_step_reducer";
 import ConfigureGemCommerceReducer from "./configure_gem_commerce_reducer";
 import ConfigurePatreonReducer from "./configure_patreon_reducer";
 import ConvertItemToCosmeticReducer from "./convert_item_to_cosmetic_reducer";
+import CraftArrowsReducer from "./craft_arrows_reducer";
 import CraftGradeGearReducer from "./craft_grade_gear_reducer";
 import CraftGradeItemReducer from "./craft_grade_item_reducer";
 import CreateGuildReducer from "./create_guild_reducer";
@@ -136,6 +137,7 @@ import ListExchangeGearReducer from "./list_exchange_gear_reducer";
 import MarkPortalCutsceneSeenReducer from "./mark_portal_cutscene_seen_reducer";
 import MarkQuestBoardSeenReducer from "./mark_quest_board_seen_reducer";
 import MineNodeReducer from "./mine_node_reducer";
+import NockArrowReducer from "./nock_arrow_reducer";
 import PauseResearchReducer from "./pause_research_reducer";
 import PlaceExchangeOfferReducer from "./place_exchange_offer_reducer";
 import PrepareWorldActionPositionReducer from "./prepare_world_action_position_reducer";
@@ -210,6 +212,7 @@ import SimulateTimeAwayReducer from "./simulate_time_away_reducer";
 import SnapshotProfileCharacterReducer from "./snapshot_profile_character_reducer";
 import SpeedUpItemUpgradeWithGemsReducer from "./speed_up_item_upgrade_with_gems_reducer";
 import SpeedUpResearchWithGemsReducer from "./speed_up_research_with_gems_reducer";
+import SpendArrowsReducer from "./spend_arrows_reducer";
 import SpendPrestigePerkPointReducer from "./spend_prestige_perk_point_reducer";
 import StartAdGemsReducer from "./start_ad_gems_reducer";
 import StartAggroRunReducer from "./start_aggro_run_reducer";
@@ -337,6 +340,7 @@ import MyLootSettingsRow from "./my_loot_settings_table";
 import MyMailboxV2Row from "./my_mailbox_v_2_table";
 import MyMinedNodesRow from "./my_mined_nodes_table";
 import MyMiningRow from "./my_mining_table";
+import MyNockedArrowRow from "./my_nocked_arrow_table";
 import MyOfflineGatherChoiceRow from "./my_offline_gather_choice_table";
 import MyOfflinePreferenceRow from "./my_offline_preference_table";
 import MyOfflineProgressRow from "./my_offline_progress_table";
@@ -344,9 +348,11 @@ import MyOnboardingRow from "./my_onboarding_table";
 import MyOresRow from "./my_ores_table";
 import MyPlayerBlocksRow from "./my_player_blocks_table";
 import MyProceduralBossRow from "./my_procedural_boss_table";
+import MyRefinePityRow from "./my_refine_pity_table";
 import MyRefineResultRow from "./my_refine_result_table";
 import MyResearchRanksRow from "./my_research_ranks_table";
 import MyRewardKillsRow from "./my_reward_kills_table";
+import MyRunTimingRow from "./my_run_timing_table";
 import MyServerBoostTriggerRow from "./my_server_boost_trigger_table";
 import MySocialHubRow from "./my_social_hub_table";
 import MySocialMessagesRow from "./my_social_messages_table";
@@ -1603,6 +1609,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyMiningRow),
+  myNockedArrow: __table({
+    name: 'my_nocked_arrow',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyNockedArrowRow),
   myOfflineGatherChoice: __table({
     name: 'my_offline_gather_choice',
     indexes: [
@@ -1652,6 +1665,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyProceduralBossRow),
+  myRefinePity: __table({
+    name: 'my_refine_pity',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRefinePityRow),
   myRefineResult: __table({
     name: 'my_refine_result',
     indexes: [
@@ -1673,6 +1693,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyRewardKillsRow),
+  myRunTiming: __table({
+    name: 'my_run_timing',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRunTimingRow),
   myServerBoostTrigger: __table({
     name: 'my_server_boost_trigger',
     indexes: [
@@ -1829,6 +1856,7 @@ const reducersSchema = __reducers(
   __reducerSchema("configure_gem_commerce", ConfigureGemCommerceReducer),
   __reducerSchema("configure_patreon", ConfigurePatreonReducer),
   __reducerSchema("convert_item_to_cosmetic", ConvertItemToCosmeticReducer),
+  __reducerSchema("craft_arrows", CraftArrowsReducer),
   __reducerSchema("craft_grade_gear", CraftGradeGearReducer),
   __reducerSchema("craft_grade_item", CraftGradeItemReducer),
   __reducerSchema("create_guild", CreateGuildReducer),
@@ -1891,6 +1919,7 @@ const reducersSchema = __reducers(
   __reducerSchema("mark_portal_cutscene_seen", MarkPortalCutsceneSeenReducer),
   __reducerSchema("mark_quest_board_seen", MarkQuestBoardSeenReducer),
   __reducerSchema("mine_node", MineNodeReducer),
+  __reducerSchema("nock_arrow", NockArrowReducer),
   __reducerSchema("pause_research", PauseResearchReducer),
   __reducerSchema("place_exchange_offer", PlaceExchangeOfferReducer),
   __reducerSchema("prepare_world_action_position", PrepareWorldActionPositionReducer),
@@ -1965,6 +1994,7 @@ const reducersSchema = __reducers(
   __reducerSchema("snapshot_profile_character", SnapshotProfileCharacterReducer),
   __reducerSchema("speed_up_item_upgrade_with_gems", SpeedUpItemUpgradeWithGemsReducer),
   __reducerSchema("speed_up_research_with_gems", SpeedUpResearchWithGemsReducer),
+  __reducerSchema("spend_arrows", SpendArrowsReducer),
   __reducerSchema("spend_prestige_perk_point", SpendPrestigePerkPointReducer),
   __reducerSchema("start_ad_gems", StartAdGemsReducer),
   __reducerSchema("start_aggro_run", StartAggroRunReducer),

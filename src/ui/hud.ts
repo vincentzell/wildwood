@@ -1,8 +1,7 @@
-import { appendBagTileContents, setTileGrade } from "./bag-item-tile";
+import { appendBagTileContents, appendOreTileContents, setTileGrade } from "./bag-item-tile";
 import { itemTier } from "../../shared/item-tier";
 import { appendItemTierLabel } from "./item-tier-label";
 import { appendRefineBadge, withRefineStars } from "./refine-badge";
-import { oreIconSource } from "./ore-icon";
 import { oreKindsHeld, type OreCounts } from "../../shared/ore-bag";
 import { REFINE_ORES, type OreId } from "../../shared/refine";
 import { cosmeticInventoryStacks, bagInventoryStacks, isStarterLook, ITEM_DEFINITIONS, type EquipmentSlot } from "../game/inventory";
@@ -310,34 +309,24 @@ function renderEquipmentSlot(
 }
 
 /**
- * One kind of ore, wood or crystal in the bag: its icon, its name over it as a tier sits over gear, and the stack's
+ * One kind of ore, wood, crystal or arrow in the bag: its icon, its name over it as a tier sits over gear, and the stack's
  * count in the corner. Tapping it opens the item window. It takes a bag slot like an item, but is never picked to delete.
+ * The arrow kind nocked is outlined, a tick before its name.
  */
-function oreTile(oreId: OreId, count: number, onInspect?: (oreId: OreId) => void) {
+function oreTile(oreId: OreId, count: number, onInspect?: (oreId: OreId) => void, nocked = false) {
   const name = REFINE_ORES[oreId].name;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "inventory-item is-filled is-ore";
   button.dataset.inventoryLocation = "ORE";
   button.dataset.oreId = oreId;
-  button.setAttribute("aria-label", `${name}, ${count}. Tap to inspect.`);
-  const art = document.createElement("span");
-  art.className = "inventory-item-art-wrap";
-  const source = oreIconSource(oreId);
-  if (source) {
-    const image = document.createElement("span");
-    image.className = "inventory-item-art";
-    image.setAttribute("aria-hidden", "true");
-    image.style.backgroundImage = `url(${source})`;
-    art.append(image);
+  button.setAttribute("aria-label", `${name}, ${count}${nocked ? ", Nocked" : ""}. Tap to inspect.`);
+  appendOreTileContents(button, oreId, count);
+  if (nocked) {
+    button.classList.add("is-nocked");
+    const label = button.querySelector(".item-tier-label");
+    if (label) label.textContent = `✓ ${label.textContent}`;
   }
-  const label = document.createElement("span");
-  label.className = "item-tier-label is-above";
-  label.textContent = name.replace(/ Ore$/, "").replace(/^Arcane /, "");
-  const stack = document.createElement("span");
-  stack.className = "inventory-stack-count";
-  stack.textContent = count < 10_000 ? String(count) : formatCompactNumber(count);
-  button.append(art, label, stack);
   button.addEventListener("click", () => onInspect?.(oreId));
   return button;
 }
@@ -364,6 +353,8 @@ export function renderInventoryView(
     /** Ores held: each kind is a stack in one bag slot, after the gear (shared/ore-bag.ts). */
     ores?: OreCounts;
     onInspectOre?: (oreId: OreId) => void;
+    /** The arrow kind the bow has nocked: its stack is marked. */
+    nockedArrow?: OreId | null;
   },
 ) {
   elements.items.replaceChildren();
@@ -395,7 +386,7 @@ export function renderInventoryView(
   for (let index = 0; index < visibleSlots; index += 1) {
     const ore = visibleOres[index - visibleStacks.length];
     if (index >= visibleStacks.length && ore) {
-      elements.items.appendChild(oreTile(ore, actions.ores?.[ore] ?? 0, actions.onInspectOre));
+      elements.items.appendChild(oreTile(ore, actions.ores?.[ore] ?? 0, actions.onInspectOre, ore === actions.nockedArrow));
       continue;
     }
     const stack = visibleStacks[index];

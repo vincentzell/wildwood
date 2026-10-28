@@ -149,7 +149,7 @@ const PLAYER_STATE_TABLES: ReadonlySet<string> = new Set([
   "endlessTravelAccess", "exchangeCollect", "exchangeListing", "exchangeOffer",
   "gemKillDaily", "gemKillProgress", "gemTransaction", "guildMemberQuestWeek", "guildRejoin",
   "homeReturnLocation", "leaderboardDirty", "leaderboardPosition", "leaderboardPrestigePosition", "leaderboardStanding", "loginMove",
-  "offlineProgress", "offlineGatherChoice", "patreonPreview", "serverBoostTrigger", "playerAggroChallenge", "playerAggroChallengeParked", "playerBonusToggle", "playerNameColor",
+  "offlineProgress", "offlineGatherChoice", "playerRunTiming", "playerNockedArrow", "patreonPreview", "serverBoostTrigger", "playerAggroChallenge", "playerAggroChallengeParked", "playerBonusToggle", "playerNameColor",
   "playerMining", "playerMinedNode", "playerMiningLevel", "playerWoodcutting", "playerChoppedTree", "playerWoodcuttingLevel", "playerLuckResearch", "playerResearchRank", "playerCardShopPurchase", "playerWeaponMastery", "playerMasteryLevel", "playerGold", "oldGearPayout", "playerStarterWeapon", "playerCraftSkill", "playerCraftLevel", "playerTool",
   "playerCosmeticRefine", "playerClientHost",
   "playerDailyQuest", "playerEndlessRebaseBackup", "playerFreeRespec",

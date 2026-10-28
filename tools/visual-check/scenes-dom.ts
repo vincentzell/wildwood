@@ -17,6 +17,7 @@ import { createGemShopController } from "../../src/ui/gem-shop-controller";
 import { markChatAnnouncement } from "../../src/ui/chat-announcement-line";
 import { createDiamondLookDrawer } from "../../src/game/runtime/diamond-look-preview";
 import { installServerBoostHud } from "../../src/ui/server-boost-hud";
+import { createHudArrowChip } from "../../src/ui/hud-arrow-chip";
 import { createExchangeController } from "../../src/ui/exchange-window";
 import { appendBagTileContents } from "../../src/ui/bag-item-tile";
 import { createItemInspectionController } from "../../src/ui/item-inspection-controller";
@@ -32,6 +33,11 @@ import { createOfflineProgressSummary } from "../../src/ui/offline-progress-summ
 import { questTrackerView } from "../../src/ui/quest-board-controller";
 import { CAMPAIGN_MAPS } from "../../shared/campaign-registry";
 import { CARDS } from "../../shared/cards";
+import { createMapGuideController } from "../../src/ui/map-guide-controller";
+import { createGameBootstrap } from "../../src/game/runtime/game-bootstrap";
+import { mapWorldLayout } from "../../src/game/map-layout";
+import { mapArtReady, sharedAssets } from "./game-world";
+import { TOWN_ARRIVAL } from "../../shared/town";
 
 let markup: Promise<Document> | null = null;
 
@@ -131,6 +137,7 @@ async function icons() {
   }, { ...inventory, selectedItemId: "" }, "EQUIPMENT", {
     onInspect: () => {}, upgradeLevel: () => 0, slotTier: () => 7, refineLevel, slotCapacity: items.length + copies.length,
     copies, nextSlotCost: 150n,
+    ores: { iron_ore: 12, pine_log: 900, steel_arrow: 1_240, fire_arrow: 80, piercing_arrow: 12_500 }, nockedArrow: "steel_arrow",
   });
   const preview = createInventoryCharacterPreview(byId<HTMLCanvasElement>("inventoryCharacterCanvas"), await playerAppearance());
   const drawPreview = () => preview.draw({ visible: true, inventory, skinTone: 2, power: 54_321 });
@@ -154,6 +161,19 @@ async function hud() {
   await settleCssImages();
 }
 
+/** The HUD corner as the game builds it: gems, gold and the nocked arrow chip with a bow in hand. */
+async function hudArrow() {
+  const doc = await gameMarkup();
+  document.body.style.background = GROUND;
+  for (const node of doc.body.children) document.body.append(document.importNode(node, true));
+  await import("../../src/ui/game-shell");
+  byId("start").remove();
+  byId("hudGemBalance").textContent = "1,250";
+  byId("hudGoldBalance").textContent = "8,420";
+  createHudArrowChip({ weapon: () => "rare_bow", nocked: () => "fire_arrow", held: () => 1_240, open: () => {} })();
+  await settleCssImages();
+}
+
 /** The start screen's wordmark and choice panel, as a new visitor first sees them. */
 async function wordmark() {
   await importById("start");
@@ -161,9 +181,9 @@ async function wordmark() {
 }
 
 /**
- * The Smith on each of Craft, Reforge and Refine, the Weapon Seller on Sell and the Armor Seller on Buy, filled by their
- * own window code from fake rows. Each window keeps its real size, so its pinned detail and grid show as in the game;
- * they are stacked so one full-page capture shows all five.
+ * The Smith on each of Craft (gear, then an arrow picked), Reforge and Refine, the Weapon Seller on Sell and the Armor
+ * Seller on Buy, filled by their own window code from fake rows. Each window keeps its real size, so its pinned detail
+ * and grid show as in the game; they are stacked so one full-page capture shows all six.
  */
 async function shops() {
   await gameMarkup();
@@ -174,7 +194,7 @@ async function shops() {
     dialog.farm-sheet[open] { position: relative !important; inset: auto !important; margin: 12px auto !important; }
   `;
   document.head.append(unpin);
-  const ores = { pine_log: 900, oak_log: 40, copper_ore: 300, iron_ore: 12, starshard: 5 };
+  const ores = { pine_log: 900, oak_log: 40, copper_ore: 300, iron_ore: 12, starshard: 5, steel_arrow: 1_240, fire_arrow: 80 };
   const bow = { arrowStorm: 3.1, ricochet: 1.2, piercingShot: 0 }, sword = { whirlwind: 2, deflect: 0, shockwave: 1.5 };
   const done = async () => ({ ok: true });
   const held = [
@@ -185,13 +205,15 @@ async function shops() {
     { itemId: "fine_light_armor", copyId: 0n, equipped: true },
     { itemId: "common_ranger_boots", copyId: 0n, equipped: true },
   ];
-  for (const view of ["craft", "reforge", "refine"] as const) {
+  // Craft twice: once on the gear, once with Fire Arrow picked.
+  for (const view of ["craft", "craft", "reforge", "refine"] as const) {
     createSmithController({
       inTown: () => true, items: () => held, refineLevel: (_itemId, copyId) => copyId ? 2 : 7, slotTier: () => 3, ores: () => ores, refine: done,
+      refineFails: () => 3,
       showMessage: () => {},
       craft: {
         craftSkills: () => ({ fletching: BigInt(craftExperienceForLevel(24)), smithing: BigInt(craftExperienceForLevel(6)) }),
-        ores: () => ores, masteryLevels: () => ({ archery: 20 }), bagFull: () => false, craft: done,
+        ores: () => ores, masteryLevels: () => ({ archery: 20 }), bagFull: () => false, craft: done, craftArrows: done,
         weapons: () => [
           { itemId: "rare_bow", copyId: 0n, equipped: true, roll: bow },
           { itemId: "rare_bow", copyId: 7n, equipped: false, roll: { arrowStorm: 0, ricochet: 2, piercingShot: 0.8 } },
@@ -201,6 +223,8 @@ async function shops() {
       },
     }).open(view);
   }
+  const arrowSmith = document.querySelectorAll<HTMLElement>(".smith-sheet")[1];
+  arrowSmith?.querySelector<HTMLElement>('.station-arrows [data-item-id="fire_arrow"]')?.click();
   try { localStorage.setItem("wildstat.gearSellerView.weapons", "sell"); localStorage.setItem("wildstat.gearSellerView.armor", "buy"); } catch { /* the default views */ }
   const seller: GearSellerDeps = {
     inTown: () => true, showMessage: () => {}, gold: () => 12_480n, masteryLevels: () => ({ archery: 20 }),
@@ -219,6 +243,10 @@ async function shops() {
   createGearSellerController("armor", seller).open();
   for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) { dialog.close(); dialog.show(); }
   await settleCssImages();
+  // The arrow's grid sits under the gear's: scrolled to it.
+  const scroll = arrowSmith?.querySelector<HTMLElement>('[data-view="craft"] .station-scroll');
+  const heading = scroll?.querySelector<HTMLElement>(".station-subhead");
+  if (scroll && heading) scroll.scrollTop += heading.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 4;
 }
 
 /** The gem Shop on the web: the Patreon rows and the dev note with its three frames and the Diamond Galaxy set. */
@@ -491,6 +519,8 @@ async function offlineChoice() {
     blocked: false,
     choice: { rocks: 1_174, miningGain: 7_560, mineOres: { mithril_ore: 2_310, starshard: 17 }, trees: 995, woodcuttingGain: 7_960, chopOres: { yew_log: 2_050 } },
   });
+  // Fight opened, Mine and Chop folded: both states of a row in one capture.
+  document.querySelector<HTMLButtonElement>('.offline-choice[data-activity="fight"] .offline-choice-toggle')?.click();
   await settleCssImages();
 }
 
@@ -526,6 +556,31 @@ async function dpsBreakdown() {
   await settleCssImages();
 }
 
-export const DOM_SCENES: Record<string, () => Promise<void>> = { icons, hud, wordmark, shops, "gem-shop": gemShop, "server-boost": serverBoost, "exchange-window": exchangeWindow, grades, "quest-tracker": questTracker, "dps-breakdown": dpsBreakdown, builds, "offline-choice": offlineChoice,
+/** The World Map opened in the Town: the Town's own page, with the player at the arrival. */
+async function worldMapTown() {
+  const doc = await gameMarkup();
+  document.body.style.background = "#151515";
+  for (const node of doc.body.children) document.body.append(document.importNode(node, true));
+  await import("../../src/ui/game-shell");
+  const guide = byId("mapGuide");
+  await mapArtReady("town");
+  const state = createGameBootstrap();
+  const player = Object.assign(state.player, { x: TOWN_ARRIVAL.x, y: TOWN_ARRIVAL.y });
+  const town = state.mapConfig.town;
+  const trigger = document.createElement("button");
+  createMapGuideController({
+    trigger, overlay: guide, title: byId("mapGuideTitle"), canvas: byId<HTMLCanvasElement>("mapGuideCanvas"),
+    zoneLabels: byId("mapGuideZoneLabels"), dropItems: byId("mapGuideDropItems"), back: byId<HTMLButtonElement>("mapGuideBack"),
+  }, {
+    currentMapId: () => "town", mapName: mapId => state.mapConfig[mapId].name, paths: mapWorldLayout(player, "town").paths, spawnSites: [], player,
+    boss: () => null, mapUnlocked: () => true,
+    portals: () => [town.portal, town.secondaryPortal].flatMap(portal => portal ? [{ x: portal.x, y: portal.y, destination: portal.destination, unlocked: true }] : []),
+    villageGround: () => sharedAssets().assets.townVillageGround, beforeOpen: () => {}, clearPlayerInput: () => {},
+  });
+  trigger.click();
+  await settleCssImages();
+}
+
+export const DOM_SCENES: Record<string, () => Promise<void>> = { "world-map-town": worldMapTown, icons, hud, "hud-arrow": hudArrow, wordmark, shops, "gem-shop": gemShop, "server-boost": serverBoost, "exchange-window": exchangeWindow, grades, "quest-tracker": questTracker, "dps-breakdown": dpsBreakdown, builds, "offline-choice": offlineChoice,
   "chat-announcement": chatAnnouncement, "item-window": () => itemWindow(false), "card-window": cardWindow, "item-window-worn": () => itemWindow(true),
   "profile-own": () => profileWindow(true), "profile-other": () => profileWindow(false) };

@@ -1,4 +1,55 @@
 export const RELEASE_NOTES: Record<string, string[]> = {
+  "0.917.33": [
+    "Your nocked arrow and how many are left show beside your gold while you hold a bow; tap it to manage them",
+    "Research can only be started at Tech Research in Town",
+    "Each failed refine try past the safe level raises that item's next chance a little; the Smith shows how much",
+  ],
+  "0.917.32": [
+    "Fixed the Stat Tracker's attack speed with a bow at the cap",
+    "Added an optional DPS Breakdown view to Stat Tracker",
+    "Switch views in the tracker; Reset only clears the selected view",
+    "Stats and DPS now have separate timers",
+    "Auto-track bosses tracks full boss fights and pins the result",
+    "Tracker display options now expand on demand",
+  ],
+  "0.917.31": [
+    "Profile and Stat Tracker show a bow's full attack speed above the cap instead of Max",
+    "Swords turn gold at ★10 and sapphire at ★20, matching Medium armor",
+    "Whirlwind grows with your attack range, so it reaches anything your sword can hit, bosses included",
+  ],
+  "0.917.30": [
+    "Time away you don't collect is kept and added to your next time away, up to your offline limit",
+    "The World Map has a Town page: the village, Timberwood, the Copper Hills and the Trade Chrysanthemum, and where you are",
+    "The Town runs smoother, especially when it's busy and in Firefox and Safari",
+  ],
+  "0.917.29": [
+    "Faster loading and smoother play, especially on phones",
+  ],
+  "0.917.28": [
+    "Stat bonuses show as multipliers (Damage ×1.23) instead of percentages; chances and move speed stay as %",
+  ],
+  "0.917.27": [
+    "Builds save your nocked arrow, and equipping a build nocks it again",
+  ],
+  "0.917.26": [
+    "Craft arrows at the Smith: Steel, Fire, Venom, Frost, Piercing and Star, each with its own effect",
+    "Nock a stack from the bag: your bow spends one a shot, and shoots plain arrows when they run out",
+  ],
+  "0.917.25": [
+    "Bows shoot 15% faster and have +10% crit chance, shown in the profile",
+  ],
+  "0.917.23": [
+    "A stump's shadow is a plain round one, not a small leafy tree's",
+  ],
+  "0.917.22": [
+    "A felled tree's stump has a stump's shadow, not the whole tree's",
+  ],
+  "0.917.21": [
+    "The Town's countryside is open all round: walk north of the village and the hills, and into every corner",
+  ],
+  "0.917.20": [
+    "While You Were Away folds Fight, Mine and Chop into rows you open to see what each pays, so the window fits without scrolling",
+  ],
   "0.917.19": [
     "Coming back shows what fighting, mining and chopping earned while you were away; pick one to collect",
   ],
@@ -3992,6 +4043,20 @@ const RELEASE_DATES: Record<string, string> = {
 };
 
 export const RELEASE_DAYS: Record<string, string> = {
+  "0.917.33": "2026-10-27",
+  "0.917.32": "2026-10-27",
+  "0.917.31": "2026-10-27",
+  "0.917.30": "2026-10-26",
+  "0.917.29": "2026-10-26",
+  "0.917.28": "2026-10-26",
+  "0.917.27": "2026-10-26",
+  "0.917.26": "2026-10-26",
+  "0.917.25": "2026-10-26",
+  "0.917.24": "2026-10-26",
+  "0.917.23": "2026-10-26",
+  "0.917.22": "2026-10-26",
+  "0.917.21": "2026-10-26",
+  "0.917.20": "2026-10-26",
   "0.917.19": "2026-10-26",
   "0.917.18": "2026-10-26",
   "0.917.17": "2026-10-26",
@@ -4677,17 +4742,32 @@ export function releaseNotes(version: string) {
   return RELEASE_NOTES[version] ?? [];
 }
 
+type RecentRelease = { version: string; notes: string[]; date: string };
+// Newest first, sorted once; each window is cached by its cutoff day.
+let releasesNewestFirst: { release: RecentRelease; dayMs: number | null }[] | null = null;
+const recentWindows = new Map<string, RecentRelease[]>();
+
+function sortedReleases() {
+  return releasesNewestFirst ??= Object.entries(RELEASE_NOTES)
+    .sort(([a], [b]) => b.localeCompare(a, undefined, { numeric: true }))
+    .map(([version, notes]) => {
+      const day = releaseDay(version);
+      return { release: { version, notes, date: releaseDate(version) }, dayMs: day === null ? null : new Date(`${day}T00:00:00`).getTime() };
+    });
+}
+
 export function recentReleaseNotes(days = 2, today = new Date(), minimumReleases = 10) {
   const cutoff = new Date(today);
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - Math.max(0, days - 1));
   const minimum = Math.max(0, Math.floor(minimumReleases));
-  return Object.entries(RELEASE_NOTES)
-    .sort(([a], [b]) => b.localeCompare(a, undefined, { numeric: true }))
-    .filter(([version], index) => {
-      if (index < minimum) return true;
-      const day = releaseDay(version);
-      return day !== null && new Date(`${day}T00:00:00`).getTime() >= cutoff.getTime();
-    })
-    .map(([version, notes]) => ({ version, notes, date: releaseDate(version) }));
+  const key = `${cutoff.getTime()}:${minimum}`;
+  const cached = recentWindows.get(key);
+  if (cached) return cached;
+  const releases = sortedReleases()
+    .filter(({ dayMs }, index) => index < minimum || (dayMs !== null && dayMs >= cutoff.getTime()))
+    .map(({ release }) => release);
+  if (recentWindows.size > 16) recentWindows.clear();
+  recentWindows.set(key, releases);
+  return releases;
 }

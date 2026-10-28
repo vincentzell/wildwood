@@ -56,6 +56,8 @@ export function createSmithController(deps: {
   refine: (itemId: string, copyId: bigint, expectedLevel: number) => Promise<Result>;
   /** Refine Luck's rank, which raises the odds the server rolls against. */
   refineLuck?: () => number;
+  /** Fails in a row on a copy at its level, which raise its next try's chance. */
+  refineFails?: (itemId: string, copyId: bigint, level: number) => number;
   showMessage: (text: string, color: string) => void;
   /** The Mining (shared/mining.ts) and Woodcutting (shared/woodcutting.ts) stats, beside where the ore and wood are. */
   mining?: () => number;
@@ -70,7 +72,10 @@ export function createSmithController(deps: {
   dialog.innerHTML = `<header class="farm-header"><h2 id="smithTitle" class="window-banner"><span>The Smith</span></h2></header>`
     + `<div class="quest-body"><div class="smith-views-bar"><div class="inventory-filters smith-views" role="group" aria-label="Smith view"></div></div>`
     // Each tab: the piece picked pinned on top, the grid to pick from under it.
-    + stationViewMarkup("craft", "Gear to craft")
+    // Arrows in a grid of their own under the gear.
+    + stationViewMarkup("craft", "Gear to craft", {
+      after: `<h3 class="station-subhead">Arrows</h3><div class="inventory-items station-grid station-arrows" role="listbox" aria-label="Arrows to craft"></div>`,
+    })
     + stationViewMarkup("reforge", "Weapons to reforge", {
       after: `<p class="farm-map smith-intro">Roll a weapon's skills again for the same materials as crafting it. Each skill keeps the better roll.</p>`,
     })
@@ -154,10 +159,14 @@ export function createSmithController(deps: {
       return;
     }
     const { level, atTop, cost, short } = nextTry(item), next = level + 1, tier = deps.slotTier(item.itemId);
-    const safe = refineSafeLimit(item.itemId), chance = atTop ? 0 : refineSuccessChance(item.itemId, next, deps.refineLuck?.() ?? 0);
-    const [now] = itemStats(item.itemId, { tier, refine: level }), [after] = atTop ? [""] : itemStats(item.itemId, { tier, refine: next });
+    const safe = refineSafeLimit(item.itemId), luck = deps.refineLuck?.() ?? 0, fails = deps.refineFails?.(item.itemId, item.copyId, level) ?? 0;
+    const base = atTop ? 0 : refineSuccessChance(item.itemId, next, luck), chance = atTop ? 0 : refineSuccessChance(item.itemId, next, luck, fails);
+    // A small step can round away at two decimals (×1.05 → ×1.05); then both sides show three.
+    const pair = (decimals: number) => [itemStats(item.itemId, { tier, refine: level }, decimals)[0], atTop ? "" : itemStats(item.itemId, { tier, refine: next }, decimals)[0]];
+    let [now, after] = pair(2);
+    if (now === after) [now, after] = pair(3);
     focus.replaceChildren();
-    // Title case, as the item window shows stats ("Damage +7%").
+    // Title case, as the item window shows stats ("Damage ×1.07").
     const stat = formatEquipmentStat(itemInspectionButtonLabel(now ?? ""));
     const head = itemHead(item, atTop ? `${stat} · Fully Refined` : `${stat} → ${formatEquipmentStat(after?.split(" ").pop() ?? "")}`);
     const facts = document.createElement("dl");
@@ -172,6 +181,8 @@ export function createSmithController(deps: {
     };
     if (!atTop) {
       fact("Chance", next <= safe ? "Safe" : percent(chance), next <= safe ? "is-safe" : "is-risky");
+      // Each fail in a row adds a little, so a dry streak still shows progress.
+      if (next > safe && chance > base) fact(`${fails} Fails`, `+${percent(chance - base)}`);
       fact("Safe to", `★${safe}`);
     }
     const button = document.createElement("button");
@@ -217,12 +228,14 @@ export function createSmithController(deps: {
     const chosen = items.find(item => key(item) === selected);
     // Only the tab on screen lists its tiles; picking another tab renders it.
     const craftTiles = view === "craft" && crafts ? crafts.craftTiles() : [];
+    const arrowTiles = view === "craft" && crafts ? crafts.arrowTiles() : [];
     const reforgeTiles = view === "reforge" && crafts ? crafts.reforgeTiles() : [];
-    if (view === "craft") picked.craft = stationPick(craftTiles, picked.craft ?? null);
+    if (view === "craft") picked.craft = stationPick([...craftTiles, ...arrowTiles], picked.craft ?? null);
     if (view === "reforge") picked.reforge = stationPick(reforgeTiles, picked.reforge ?? null);
     // Presence updates also refresh open windows. Keep focus and buttons in place until this window changes.
     const state = JSON.stringify([
       view, shown, selected, picked, refining, lastResult, deps.refineLuck?.(),
+      chosen && deps.refineFails?.(chosen.itemId, chosen.copyId, deps.refineLevel(chosen.itemId, chosen.copyId)),
       deps.ores(), deps.mining?.(), deps.woodcutting?.(), crafts?.state(), refineTiles,
     ], (_key, value) => typeof value === "bigint" ? String(value) : value);
     if (state === renderedState) return;
@@ -241,6 +254,8 @@ export function createSmithController(deps: {
     } else if (view === "craft" && crafts) {
       viewPart("craft", ".station-detail").replaceChildren(...detailOf(picked.craft ? crafts.craftDetail(picked.craft) : null));
       renderStationGrid(viewPart("craft", ".station-grid"), craftTiles, picked.craft ?? null, pick => { picked.craft = pick; render(); });
+      renderStationGrid(viewPart("craft", ".station-arrows"), arrowTiles, picked.craft ?? null, pick => { picked.craft = pick; render(); });
+      viewPart("craft", ".station-subhead").hidden = !arrowTiles.length;
     } else if (view === "reforge" && crafts) {
       viewPart("reforge", ".station-detail").replaceChildren(...detailOf(picked.reforge ? crafts.reforgeDetail(picked.reforge) : null, "No weapon to reforge yet. Craft one first."));
       renderStationGrid(viewPart("reforge", ".station-grid"), reforgeTiles, picked.reforge ?? null, pick => { picked.reforge = pick; render(); });
@@ -329,6 +344,7 @@ export function createSmithRuntime(deps: {
     itemUpgradeLevel?: (itemId: string) => number;
     ores?: () => Readonly<Partial<Record<OreId, number>>>;
     refineItem?: (itemId: string, copyId: bigint, expectedLevel: number) => Promise<Result>;
+    refineFails?: (itemId: string, copyId: bigint, level: number) => number;
     researchInPlay?: () => { refineLuck?: number };
     setOnRefineResult?: (callback: ((result: RefineResult) => void) | null) => void;
   }) | null | undefined;
@@ -353,6 +369,7 @@ export function createSmithRuntime(deps: {
     ores: () => deps.coop()?.ores?.() ?? {},
     refine: async (itemId, copyId, expectedLevel) => deps.coop()?.refineItem?.(itemId, copyId, expectedLevel) ?? { ok: false, error: "Not Connected" },
     refineLuck: () => deps.coop()?.researchInPlay?.()?.refineLuck ?? 0,
+    refineFails: (itemId, copyId, level) => deps.coop()?.refineFails?.(itemId, copyId, level) ?? 0,
     mining: () => deps.coop()?.mining?.() ?? 0,
     woodcutting: () => deps.coop()?.woodcutting?.() ?? 0,
     craft: craftDepsFor(deps.coop, inventory, deps.showMessage),

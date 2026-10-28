@@ -397,6 +397,7 @@ export function createChatController({ elements, getCoop, showMessage, onOpenRep
 
   function updateHeight() {
     elements.panel.classList.toggle("is-large", large);
+    elements.panel.closest("#hud")?.classList.toggle("chat-large", large);
     elements.sizeToggle.setAttribute("aria-expanded", String(large));
     elements.sizeToggle.setAttribute("aria-label", large ? "Minimize chat" : "Expand chat");
     elements.backButton.hidden = !large;

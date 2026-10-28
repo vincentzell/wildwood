@@ -602,6 +602,10 @@
       "lastNodeId:u32",
       "lastStarshard:bool"
     ],
+    "my_nocked_arrow": [
+      "identity:identity",
+      "arrowId:string"
+    ],
     "my_offline_gather_choice": [
       "identity:identity",
       "grantedAtMicros:u64",
@@ -655,6 +659,14 @@
       "maxHp:f64",
       "respawnAtMicros:u64"
     ],
+    "my_refine_pity": [
+      "key:string",
+      "identity:identity",
+      "itemId:string",
+      "copyId:u64",
+      "level:u8",
+      "fails:u32"
+    ],
     "my_refine_result": [
       "identity:identity",
       "itemId:string",
@@ -678,6 +690,13 @@
       "armor:u64",
       "regen:u64",
       "speed:u64"
+    ],
+    "my_run_timing": [
+      "identity:identity",
+      "prestige:u32",
+      "startPlayedMicros:u64",
+      "wholeRun:bool",
+      "bossClears:string"
     ],
     "my_server_boost_trigger": [
       "identity:identity",

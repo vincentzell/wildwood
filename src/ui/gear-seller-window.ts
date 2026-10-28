@@ -204,7 +204,7 @@ export function createGearSellerController(seller: GearSeller, deps: GearSellerD
     return row;
   }
 
-  /** "+12% Damage vs Now": what the piece changes against what is worn in its slot. */
+  /** "×1.14 Damage vs Now": what the piece changes against what is worn in its slot. */
   function comparisonTag(itemId: GradeItemId, worn: WornLoadout) {
     const { delta, text } = compare(itemId, worn);
     const tag = document.createElement("span");

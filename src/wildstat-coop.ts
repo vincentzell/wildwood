@@ -904,6 +904,7 @@ export const wildstatCoop = {
     return localIdentity;
   },
   pendingOfflineProgress: () => pendingOfflineProgress,
+  runTiming: () => accountRows.api.runTimingWith(progressionService.lifetimeFor(localIdentity)),
   ...accountRows.api,
   weaponMasteryInPlay: (): MasteryPoints => masteryPointsInPlay(accountRows.api.weaponMastery(), progressionService.api.prestigeChallenge().active || progressionService.api.aggroChallenge().active), // None during challenges.
   accountAudio: accountAudio.api,

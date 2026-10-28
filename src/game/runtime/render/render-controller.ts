@@ -166,7 +166,7 @@ export function createRenderController(options: {
   // In the canvas it would be a full-screen copy every frame, and a full-screen canvas reallocated and repainted
   // whenever the player moved on screen (camera held at a map edge), over half a millisecond in Firefox's software canvas.
   let vignetteFrame: HTMLDivElement | null = null, vignetteSky: HTMLDivElement | null = null;
-  let vignetteLook = "", vignetteAt = "", vignetteWanted = false, vignetteShown = false;
+  let vignetteLook = "", vignetteX = NaN, vignetteY = NaN, vignetteWanted = false, vignetteShown = false;
   function vignetteElement() {
     if (vignetteSky || typeof document === "undefined" || !ctx.canvas?.isConnected) return vignetteSky;
     const frame = document.createElement("div");
@@ -206,14 +206,17 @@ export function createRenderController(options: {
     const look = `${width}x${height}:${innerRadius}`;
     if (look !== vignetteLook) {
       vignetteLook = look;
+      vignetteX = NaN;
       vignetteFrame.style.width = `${width}px`;
       vignetteFrame.style.height = `${height}px`;
       sky.style.width = `${width * 2}px`;
       sky.style.height = `${height * 2}px`;
       sky.style.background = `radial-gradient(circle ${outerRadius}px at ${width}px ${height}px, rgba(0,0,0,0) ${innerRadius}px, rgba(0,0,0,.33) ${outerRadius}px)`;
     }
-    const at = `${x - width}px,${y - height}px`;
-    if (at !== vignetteAt) { vignetteAt = at; sky.style.transform = `translate3d(${at},0)`; }
+    // Its edge is hundreds of pixels soft, so a 1px follow cannot be seen; each move restyles a layer twice the view.
+    if (Math.abs(x - vignetteX) < 2 && Math.abs(y - vignetteY) < 2) return;
+    vignetteX = x; vignetteY = y;
+    sky.style.transform = `translate3d(${x - width}px,${y - height}px,0)`;
   }
 
   function drawNightMask() {

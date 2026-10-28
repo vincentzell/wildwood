@@ -147,9 +147,9 @@
 
 .guild-row-copy > .guild-presence--online { color: #65d66d; }
 .guild-row-copy > .guild-presence--offline { color: #a7aba8; }
-/* Keep the roster and its scroll position behind an inspected player. */
-body:has(.guild-overlay:not([hidden])) #playerProfile { z-index: 13; pointer-events: auto; }
-body:has(.guild-overlay:not([hidden])) #profileIconPicker { z-index: 14; }
+/* Keep the roster and its scroll position behind an inspected player (body.guild-overlay-open, guild-overlay-open.ts). */
+body.guild-overlay-open #playerProfile { z-index: 13; pointer-events: auto; }
+body.guild-overlay-open #profileIconPicker { z-index: 14; }
 
 .guild-emblem.guild-emblem { display: block; aspect-ratio: 1; background: url("guild-emblems-v3.webp") no-repeat; background-size: 418% 418%; clip-path: none; border-radius: 0; }
 .guild-emblem.guild-emblem--sheet-2 { background-image: url("guild-emblems-v4.webp"); }

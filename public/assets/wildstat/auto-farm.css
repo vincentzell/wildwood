@@ -280,7 +280,7 @@
   paint-order: normal;
   text-shadow: none;
 }
-#autoFarmSheet.farm-card[hidden], #hud:has(#chatPanel.is-large) #autoFarmSheet { display: none; }
+#autoFarmSheet.farm-card[hidden], #hud.chat-large #autoFarmSheet { display: none; }
 #chatPanel[hidden] ~ #autoFarmSheet { bottom: calc(var(--toolbar-height) + 12px); }
 #autoFarmSheet.farm-card.is-world-gesture, #autoFarmSheet.farm-card.is-world-gesture * { pointer-events: none; }
 #autoFarmSheet.farm-card .farm-header { display: flex; align-items: center; padding: 0; }
@@ -668,6 +668,8 @@
 .smith-sheet .smith-shop-copy strong { font-size: 15px; line-height: 1.2; overflow-wrap: anywhere; }
 .smith-sheet .smith-shop-grade, .smith-sheet .smith-shop-stat { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .smith-sheet .smith-shop-stat { color: #fff; font-size: 14px; font-weight: 800; }
+/* An arrow's effect is its whole point: it wraps rather than cut. */
+.smith-sheet .smith-shop-row.is-arrow .smith-shop-stat { white-space: normal; }
 /* What a piece changes against what is worn, as a pill: better white, worse muted. */
 .smith-sheet .smith-compare { margin: 3px 0 1px; padding: 4px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: #1d1d1d; color: #fff; font: 900 13px/16px var(--font-rounded); }
 .smith-sheet .smith-compare.is-better { border-color: rgba(255,255,255,.6); }
@@ -769,6 +771,9 @@
 .station-sheet .station-grid > .inventory-item.is-waiting > :not(.station-tile-badge) { opacity: .4; }
 .station-sheet .station-tile-badge { position: absolute; right: 0; bottom: 3px; left: 0; color: #fff; font: 900 13px/1 var(--font-rounded); text-align: center; -webkit-text-stroke: 0; text-shadow: 0 1px 1px #000, 0 0 3px #000; pointer-events: none; }
 .station-sheet .station-detail-row { padding: 10px 12px; }
+/* A second grid's name in a tab: the Smith's Arrows under his gear. */
+.station-sheet .station-subhead { margin: 2px 0 -4px; color: #fff; font: 900 15px/1.2 var(--font-rounded); }
+.station-sheet .station-subhead[hidden] { display: none; }
 /* A school's Mastery card, as the Smith's crafting card. */
 .school-window .school-window-card { border-color: rgba(255,255,255,.12); border-radius: 12px; background: #141414; }
 .school-window .school-window-bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.1); }
@@ -803,6 +808,8 @@
 .refine-stars { color: #ffd75e; }
 /* An ore stack in the bag: its count in the bottom corner, outlined like the tier label over it. */
 .inventory-item > .inventory-stack-count { position: absolute; right: 6px; bottom: 4px; z-index: 2; color: #fff; font: 900 13px/1 var(--font-rounded); -webkit-text-stroke: 3px #080b08; paint-order: stroke fill; pointer-events: none; }
+/* The arrow kind nocked: outlined in white, a tick before its name (hud.ts oreTile). */
+.inventory-item.is-ore.is-nocked { border-color: #fff; box-shadow: inset 0 0 0 1px #fff; }
 /* Six filter tabs (Ores the sixth) and the bag's buttons need about 375px: narrower, the tabs take a row of their own
    and the buttons sit under them on the right, rather than the last tab scrolling out of sight. */
 @container (max-width: 380px) {

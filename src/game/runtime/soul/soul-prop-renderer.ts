@@ -7,7 +7,7 @@ import type { WorldDecor } from "../../world";
 import type { Camera } from "../render/camera";
 import { snapWorldRenderCoordinate } from "../render/render-space";
 import { createShrunkImages, deviceScale } from "../render/shrunk-image";
-import { drawTownSignpost, TOWN_SIGNPOST_EXTENT, TOWN_SIGNPOST_EXTENT_MIRRORED } from "../town/town-signpost";
+import { createTownSignpostSprites, drawTownSignpost, TOWN_SIGNPOST_EXTENT, TOWN_SIGNPOST_EXTENT_MIRRORED } from "../town/town-signpost";
 import { drawExchangeProp, EXCHANGE_PROP_EXTENTS } from "../town/exchange-props";
 
 export type SoulPropDecor = Extract<WorldDecor, { type: "soulProp" }>;
@@ -57,14 +57,18 @@ export function createSoulPropRenderer(options: {
   devicePixelRatio: () => number;
   /** Seconds, for the pack's animations. */
   time: () => number;
+  /** True when the 2D canvas draws this frame's world itself (no WebGL sprites): frames drawn larger are cut at size too. */
+  drawsOnCanvas?: () => boolean;
 }) {
   // Live draws copy each frame cut at its size on screen (shrunk-image.ts); baking into tiles (a target) draws from the sheet.
   const shrunkImages = createShrunkImages();
   const sheetFrame = (ctx: CanvasRenderingContext2D, image: HTMLImageElement | ImageBitmap, frame: { x: number; y: number; w: number; h: number }, w: number, h: number, live: boolean) => {
     if (!live) return null;
     const scale = deviceScale(ctx);
-    return shrunkImages(image, w * scale, h * scale, ctx.imageSmoothingEnabled, frame);
+    const grow = Boolean(options.drawsOnCanvas?.());
+    return shrunkImages(image, w * scale, h * scale, ctx.imageSmoothingEnabled, frame, grow);
   };
+  const drawSignpostSprite = createTownSignpostSprites();
   return function drawSoulProp(item: SoulPropDecor, target?: CanvasRenderingContext2D) {
     if (item.crest) {
       const { camera } = options;
@@ -80,7 +84,8 @@ export function createSoulPropRenderer(options: {
     }
     if (item.signpost) {
       const { camera } = options;
-      drawTownSignpost(target ?? options.ctx, snapWorldRenderCoordinate(item.x - camera.x, camera.zoom, options.devicePixelRatio()),
+      // Live draws copy a sprite of the sign; baking into tiles draws it.
+      (target ? drawTownSignpost : drawSignpostSprite)(target ?? options.ctx, snapWorldRenderCoordinate(item.x - camera.x, camera.zoom, options.devicePixelRatio()),
         snapWorldRenderCoordinate(item.y - camera.y, camera.zoom, options.devicePixelRatio()), item.signpost, item.flip);
       return;
     }

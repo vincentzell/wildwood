@@ -455,6 +455,10 @@ export function installGameShell(doc: Document = document) {
   if (!doc.getElementById("hudGoldWallet")) {
     doc.getElementById("hudGemWallet")?.insertAdjacentHTML("afterend", `<div id="hudGoldWallet" class="hud-gem-wallet hud-gold-wallet" aria-label="0 Gold"><svg class="hud-gem-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="#e3b23c" stroke="#7a4f12" stroke-width="1.5"/><circle cx="10" cy="10" r="5.5" fill="none" stroke="#a8741d" stroke-width="1.2"/><path d="M6.5 7.5a4.5 4.5 0 0 1 3-2.5" fill="none" stroke="#fff3c4" stroke-width="1.2" stroke-linecap="round"/></svg><strong id="hudGoldBalance" class="hud-gem-balance">0</strong></div>`);
   }
+  // The nocked arrow beside gold, shown while a bow is in hand (hud-arrow-chip.ts).
+  if (!doc.getElementById("hudArrowChip")) {
+    doc.getElementById("hudGoldWallet")?.insertAdjacentHTML("afterend", `<button id="hudArrowChip" class="hud-gem-wallet hud-arrow-chip" type="button" aria-label="Nocked arrow" hidden><img class="hud-gem-icon" alt="" aria-hidden="true" draggable="false"><strong class="hud-gem-balance">0</strong></button>`);
+  }
   const toolbar = doc.getElementById("toolbar");
   for (const [id, label, icon] of [
     ["guildBtn", "Guilds", "Icon_Guild.svg"],

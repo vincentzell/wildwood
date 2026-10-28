@@ -148,6 +148,25 @@ it("only pays once, however many times the player re-enters", () => {
   expect(fixture.db.offlineProgress.identity.find(fixture.ctx.sender).grantedAtMicros).toBe(granted);
 });
 
+it("keeps time away that was never collected for the next absence, up to the window", () => {
+  const fixture = away(60 * 60);
+  enter(fixture);
+  const later = (seconds: number) => {
+    // The stamp a disconnect leaves (opens the window, above), without ending the test's session.
+    const row = fixture.db.offlineProgress.identity.find(fixture.ctx.sender);
+    fixture.db.offlineProgress.identity.update({ ...row, awaySinceMicros: fixture.ctx.timestamp.microsSinceUnixEpoch });
+    fixture.ctx.timestamp = new Timestamp(fixture.ctx.timestamp.microsSinceUnixEpoch + BigInt(seconds) * 1_000_000n);
+    enter(fixture);
+    return fixture.db.offlineProgress.identity.find(fixture.ctx.sender);
+  };
+
+  expect(later(2 * 60 * 60).seconds).toBe(3 * 60 * 60);
+  expect(later(OFFLINE_WINDOW_SECONDS).seconds).toBe(OFFLINE_WINDOW_SECONDS);
+
+  fixture.run(server.collectOfflineProgressAs, { activity: "mine" });
+  expect(later(60 * 60).seconds).toBe(60 * 60);
+});
+
 it("clears the summary when the client says it has been shown", () => {
   const fixture = away(OFFLINE_WINDOW_SECONDS);
   enter(fixture);

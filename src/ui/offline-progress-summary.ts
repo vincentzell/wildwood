@@ -120,30 +120,44 @@ export function createOfflineProgressSummary(dependencies: {
     return rows;
   }
 
-  /** One activity on offer: what it is, what it pays, and its own Collect. */
+  /** One activity on offer, folded to a row: its name and headline, a chevron that opens what it pays, and its own Collect. */
   function option(activity: OfflineActivity, title: string, detail: string, rows: HTMLElement[], available: boolean) {
     const section = document.createElement("section");
     section.className = "offline-choice";
     section.dataset.activity = activity;
     const head = document.createElement("div");
     head.className = "offline-choice-head";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "offline-choice-toggle";
+    toggle.setAttribute("aria-expanded", "false");
     const name = document.createElement("span");
     name.className = "offline-choice-title";
     name.textContent = title;
     const info = document.createElement("span");
     info.className = "offline-choice-detail";
     info.textContent = detail;
-    head.append(name, info);
+    toggle.append(name, info);
     const list = document.createElement("div");
     list.className = "offline-progress-stats";
+    list.id = `offline-choice-${activity}`;
+    list.hidden = true;
     list.append(...rows);
+    toggle.setAttribute("aria-controls", list.id);
+    toggle.disabled = !rows.length;
+    toggle.addEventListener("click", () => {
+      list.hidden = !list.hidden;
+      section.classList.toggle("is-open", !list.hidden);
+      toggle.setAttribute("aria-expanded", String(!list.hidden));
+    });
     const button = document.createElement("button");
     button.type = "button";
     button.className = "window-back-button offline-choice-collect";
     button.textContent = "Collect";
     button.disabled = !available;
     button.addEventListener("click", () => void pick(activity));
-    section.append(head, list, button);
+    head.append(toggle, button);
+    section.append(head, list);
     return section;
   }
 
@@ -165,7 +179,7 @@ export function createOfflineProgressSummary(dependencies: {
     lead.textContent = `You were away for ${formatOfflineDuration(summary.seconds)}. Pick one to collect.`;
     const kills = `${formatCompactNumber(summary.kills)} kill${summary.kills === 1 ? "" : "s"}`;
     const fight = summary.blocked ? `${offlineMapName(summary.mapId)} would have finished you`
-      : summary.mapId ? `${offlineMapName(summary.mapId)} · ${kills}` : "Nothing to fight";
+      : summary.mapId ? `${kills}\n${offlineMapName(summary.mapId)}` : "Nothing to fight";
     const fightPaid = fightRows(summary);
     choices.replaceChildren(
       option("fight", "Fight", fight, fightPaid, !summary.blocked && summary.kills > 0),
@@ -199,7 +213,7 @@ export function createOfflineProgressSummary(dependencies: {
     }
     open = true;
     overlay.hidden = false;
-    window.requestAnimationFrame(() => (summary.choice ? choices.querySelector<HTMLButtonElement>("button:not(:disabled)") : collect)?.focus());
+    window.requestAnimationFrame(() => (summary.choice ? choices.querySelector<HTMLButtonElement>(".offline-choice-collect:not(:disabled)") : collect)?.focus());
   }
 
   /**

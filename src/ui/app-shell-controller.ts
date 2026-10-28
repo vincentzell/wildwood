@@ -133,6 +133,8 @@ export function createAppShellController(dependencies: AppShellDependencies) {
     renderBooleanSetting(dpsToggle, dpsVisible);
     dpsStatus.hidden = !dpsVisible;
     fpsStatus.hidden = !fpsVisible && !latencyVisible && !dpsVisible;
+    // The quest tracker steps down under it; a class, because a :has() rule restyles on every DOM change.
+    document.body.classList.toggle("fps-status-shown", !fpsStatus.hidden);
     dependencies.mapMusic.setVolume(dependencies.mapMusic.volume);
     dependencies.mapMusic.setSfxVolume(dependencies.mapMusic.sfxVolume);
     renderVolume(musicVolumeInput, musicVolumeValue, dependencies.mapMusic.volume);
@@ -243,7 +245,7 @@ export function createAppShellController(dependencies: AppShellDependencies) {
     writeBoolean(DPS_DISPLAY_KEY, dpsVisible);
     refreshSettings();
   });
-  setInterval(() => { if (dpsVisible) dpsStatus.textContent = `DPS: ${formatCompactNumber(Math.round(playerDps.perSecond()))}`; }, 500);
+  setInterval(() => { if (dpsVisible) setText(dpsStatus, `DPS: ${formatCompactNumber(Math.round(playerDps.perSecond()))}`); }, 500);
   installDpsBreakdown({ meter: playerDps, storage: () => feedbackStorage });
   latencyToggle.addEventListener("click", () => {
     latencyVisible = !latencyVisible;

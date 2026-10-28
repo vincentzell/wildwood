@@ -94,8 +94,9 @@ function addPoints(ctx: Ctx, identity: Identity, school: WeaponSchool, points: n
  * a boss clear is the client's claim, unbounded, so a repeat must not pay. Reflect Only kills are Reflect's, not
  * the weapon's, so they train nothing.
  */
-export function awardWeaponMastery(ctx: Ctx, identity: Identity, weapon: string | undefined, kills: number, firstBossClear: boolean) {
-  if (challengeActive(ctx, identity)) return;
+export function awardWeaponMastery(ctx: Ctx, identity: Identity, weapon: string | undefined, kills: number, firstBossClear: boolean,
+  inChallenge = () => challengeActive(ctx, identity)) {
+  if (inChallenge()) return;
   const points = masteryPointsForReport(kills, firstBossClear);
   if (!points) return;
   addPoints(ctx, identity, weaponSchool(weapon), points);

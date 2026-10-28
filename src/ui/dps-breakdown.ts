@@ -37,6 +37,7 @@ export function installDpsBreakdown(options: {
   const empty = panel.querySelector<HTMLElement>(".dps-breakdown-empty")!;
   const footer = panel.querySelector("footer")!;
   let enabled = read(ENABLED_KEY), collapsed = read(COLLAPSED_KEY), shownSources = "";
+  let integrated = read("wildstat-stat-tracker-dps-switch");
 
   function renderCollapsed() {
     panel.classList.toggle("is-collapsed", collapsed);
@@ -47,8 +48,8 @@ export function installDpsBreakdown(options: {
   }
   function refresh() {
     const wasHidden = panel.hidden;
-    setHidden(panel, !enabled);
-    if (!enabled) return;
+    setHidden(panel, !enabled || integrated);
+    if (!enabled || integrated) return;
     if (wasHidden) movable.place();
     if (collapsed) { table.hidden = empty.hidden = footer.hidden = true; return; }
     const rows = options.meter.breakdown();
@@ -84,6 +85,10 @@ export function installDpsBreakdown(options: {
     refresh();
   }
   toggle?.addEventListener("click", () => setEnabled(!enabled));
+  window.addEventListener("stat-tracker-dps-change", event => {
+    integrated = (event as CustomEvent<boolean>).detail;
+    refresh();
+  });
   const movable = installMovableHudCard({ panel, handle, storage: options.storage, positionKey: POSITION_KEY, lockKey: "wildstat-dps-breakdown-position-locked", toggle: () => {
     collapsed = !collapsed;
     write(COLLAPSED_KEY, collapsed);

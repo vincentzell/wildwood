@@ -1,4 +1,5 @@
 import { renderBooleanSetting } from "./settings";
+import { formatMultiplierChange } from "./number-format";
 import { ENEMY_TYPES, rewardStatLabel, type EnemyKind, type RewardType } from "../game/enemies";
 import { GUILD_QUEST_BONUS_PER_POINT, SOLO_QUEST_BONUS_PER_QUEST, WEEKLY_QUEST_COUNT, activeQuestIndices, ownQuest, questCounts, questDay, questTarget, questDone, questOpen, questWeek, questWeekEndsAtMs, type WeeklyQuest } from "../../shared/weekly-quests";
 
@@ -18,7 +19,8 @@ export type QuestBoardSource = {
 } | null | undefined;
 
 const RANKING_ROWS = 8;
-const percent = (fraction: number) => `${Math.round(fraction * 1000) / 10}%`;
+/** A stat gain bonus as the multiplier it pays: 3.7% → ×1.04. */
+const bonusMultiplier = (fraction: number) => formatMultiplierChange(1 + fraction);
 
 export function formatQuestReset(msLeft: number) {
   const minutes = Math.max(1, Math.ceil(msLeft / 60_000));
@@ -35,12 +37,12 @@ export function guildQuestStanding(state: QuestState | null, ranking: RankingRow
   const quests = Math.min(WEEKLY_QUEST_COUNT, state?.guildPoints ?? 0);
   return {
     guild: state?.guildName
-      ? { name: state.guildName, points: state.guildPoints, bonusNow: percent(Math.max(0, state.bonus - 1)),
-        bonusNext: percent(state.guildPoints * GUILD_QUEST_BONUS_PER_POINT) }
+      ? { name: state.guildName, points: state.guildPoints, bonusNow: bonusMultiplier(Math.max(0, state.bonus - 1)),
+        bonusNext: bonusMultiplier(state.guildPoints * GUILD_QUEST_BONUS_PER_POINT) }
       : null,
     solo: state && !state.guildName
-      ? { quests, bonusNow: percent(Math.max(0, state.bonus - 1)), bonusNext: percent(quests * SOLO_QUEST_BONUS_PER_QUEST),
-        bonusMax: percent(WEEKLY_QUEST_COUNT * SOLO_QUEST_BONUS_PER_QUEST) }
+      ? { quests, bonusNow: bonusMultiplier(Math.max(0, state.bonus - 1)), bonusNext: bonusMultiplier(quests * SOLO_QUEST_BONUS_PER_QUEST),
+        bonusMax: bonusMultiplier(WEEKLY_QUEST_COUNT * SOLO_QUEST_BONUS_PER_QUEST) }
       : null,
     ranking: ranking.slice(0, RANKING_ROWS).map((row, index) => ({ place: index + 1, name: row.guildName, points: row.points, mine: row.guildName === state?.guildName })),
   };
@@ -166,7 +168,7 @@ export function createQuestBoardController(deps: {
     const solo = guildQuestStanding(state, []).solo;
     hint.textContent = solo
       // Without a guild, the board says what the week is worth so far and what the bonus is now.
-      ? `On your own: +${solo.bonusNext} stat gains next week (+${Math.round(SOLO_QUEST_BONUS_PER_QUEST * 100)}% a quest, up to +${solo.bonusMax}). Bonus now: +${solo.bonusNow}.`
+      ? `On your own: ${solo.bonusNext} stat gains next week (+${Math.round(SOLO_QUEST_BONUS_PER_QUEST * 100)}% a quest, up to ${solo.bonusMax}). Bonus now: ${solo.bonusNow}.`
       : view.finished ? "All done this week. New quests on Monday."
       : "Each quest you finish is a point for your guild. See Guild → Quests.";
     list.replaceChildren(...view.quests.map(quest => {

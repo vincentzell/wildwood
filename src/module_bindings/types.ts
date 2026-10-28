@@ -1139,6 +1139,9 @@ export type MyMinedNodes = __Infer<typeof MyMinedNodes>;
 export const MyMining = __t.object("MyMining", {});
 export type MyMining = __Infer<typeof MyMining>;
 
+export const MyNockedArrow = __t.object("MyNockedArrow", {});
+export type MyNockedArrow = __Infer<typeof MyNockedArrow>;
+
 export const MyOfflineGatherChoice = __t.object("MyOfflineGatherChoice", {});
 export type MyOfflineGatherChoice = __Infer<typeof MyOfflineGatherChoice>;
 
@@ -1160,6 +1163,9 @@ export type MyPlayerBlocks = __Infer<typeof MyPlayerBlocks>;
 export const MyProceduralBoss = __t.object("MyProceduralBoss", {});
 export type MyProceduralBoss = __Infer<typeof MyProceduralBoss>;
 
+export const MyRefinePity = __t.object("MyRefinePity", {});
+export type MyRefinePity = __Infer<typeof MyRefinePity>;
+
 export const MyRefineResult = __t.object("MyRefineResult", {});
 export type MyRefineResult = __Infer<typeof MyRefineResult>;
 
@@ -1168,6 +1174,9 @@ export type MyResearchRanks = __Infer<typeof MyResearchRanks>;
 
 export const MyRewardKills = __t.object("MyRewardKills", {});
 export type MyRewardKills = __Infer<typeof MyRewardKills>;
+
+export const MyRunTiming = __t.object("MyRunTiming", {});
+export type MyRunTiming = __Infer<typeof MyRunTiming>;
 
 export const MyServerBoostTrigger = __t.object("MyServerBoostTrigger", {});
 export type MyServerBoostTrigger = __Infer<typeof MyServerBoostTrigger>;
@@ -2051,6 +2060,12 @@ export const PlayerNameTag = __t.object("PlayerNameTag", {
 });
 export type PlayerNameTag = __Infer<typeof PlayerNameTag>;
 
+export const PlayerNockedArrow = __t.object("PlayerNockedArrow", {
+  identity: __t.identity(),
+  arrowId: __t.string(),
+});
+export type PlayerNockedArrow = __Infer<typeof PlayerNockedArrow>;
+
 export const PlayerOfflinePreference = __t.object("PlayerOfflinePreference", {
   identity: __t.identity(),
   enabled: __t.bool(),
@@ -2202,6 +2217,16 @@ export const PlayerQuestWeekTotal = __t.object("PlayerQuestWeekTotal", {
 });
 export type PlayerQuestWeekTotal = __Infer<typeof PlayerQuestWeekTotal>;
 
+export const PlayerRefinePity = __t.object("PlayerRefinePity", {
+  key: __t.string(),
+  identity: __t.identity(),
+  itemId: __t.string(),
+  copyId: __t.u64(),
+  level: __t.u8(),
+  fails: __t.u32(),
+});
+export type PlayerRefinePity = __Infer<typeof PlayerRefinePity>;
+
 export const PlayerRefineResult = __t.object("PlayerRefineResult", {
   identity: __t.identity(),
   itemId: __t.string(),
@@ -2268,6 +2293,15 @@ export const PlayerRewardKills = __t.object("PlayerRewardKills", {
   speed: __t.u64(),
 });
 export type PlayerRewardKills = __Infer<typeof PlayerRewardKills>;
+
+export const PlayerRunTiming = __t.object("PlayerRunTiming", {
+  identity: __t.identity(),
+  prestige: __t.u32(),
+  startPlayedMicros: __t.u64(),
+  wholeRun: __t.bool(),
+  bossClears: __t.string(),
+});
+export type PlayerRunTiming = __Infer<typeof PlayerRunTiming>;
 
 export const PlayerSession = __t.object("PlayerSession", {
   connectionId: __t.connectionId(),

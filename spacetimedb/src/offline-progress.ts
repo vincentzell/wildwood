@@ -238,6 +238,12 @@ function fightResult(ctx: any, progress: any, grant: OfflineGrant, ports: Offlin
   };
 }
 
+/** Seconds of an absence still waiting with its choice; a summary paid when granted (before choices) has none. */
+function uncollectedSeconds(ctx: any, row: OfflineProgressRow) {
+  if (!row.pending) return 0;
+  return ctx.db.offlineGatherChoice.identity.find(ctx.sender)?.grantedAtMicros === row.grantedAtMicros ? row.seconds : 0;
+}
+
 /**
  * Works out what the account could collect for its time away: the fight, the mining and the chopping
  * (offline-gathering.ts). Nothing is paid until the player picks one (collectOfflineProgress).
@@ -251,14 +257,15 @@ export function grantOfflineProgress(ctx: any, progress: any, ports: OfflineGran
   // Switched off in settings: close the window without paying it, so turning
   // the setting back on pays for the time since, not for the months before.
   const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
-  const seconds = offlineProgressEnabled(ctx, ctx.sender)
-    ? offlineSecondsEarned(nowMicros, row.awaySinceMicros, offlineWindowSecondsWithResearch(ctx.db.playerResearch.identity.find(ctx.sender)?.offlineWindow ?? 0))
-    : 0;
-  if (!seconds) {
+  const windowSeconds = offlineWindowSecondsWithResearch(ctx.db.playerResearch.identity.find(ctx.sender)?.offlineWindow ?? 0);
+  const earned = offlineProgressEnabled(ctx, ctx.sender) ? offlineSecondsEarned(nowMicros, row.awaySinceMicros, windowSeconds) : 0;
+  if (!earned) {
     storeOfflineGrant(ctx, ctx.sender, null, NO_GAINS);
     return progress;
   }
-  const grant = resolveFight(ctx, progress, ports, nowMicros, row.awaySinceMicros);
+  // Time away offered and never collected adds to this absence, still capped at the window.
+  const seconds = Math.min(windowSeconds, earned + uncollectedSeconds(ctx, row));
+  const grant = resolveFight(ctx, progress, ports, nowMicros, nowMicros - BigInt(seconds) * MICROS_PER_SECOND);
   storeOfflineGrant(ctx, ctx.sender, grant, grant?.outcome.rewards.length ? fightResult(ctx, progress, grant, ports).gains : NO_GAINS, seconds);
   storeOfflineGatherChoice(ctx, ctx.sender, seconds, nowMicros);
   return progress;

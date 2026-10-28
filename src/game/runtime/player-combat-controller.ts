@@ -26,8 +26,8 @@ import type { WeaponSkillRoll } from "../../../shared/weapon-skills";
 import { createSwordSkillRuntime, type SwordSkillEffects } from "./sword-skill-runtime";
 import { createStaffSkillRuntime, type StaffSkillEffects } from "./staff-skill-runtime";
 import {
-  STAFF_BOLT_DAMAGE_FACTOR, STAFF_BOLT_SPEED_FACTOR, STAFF_DPS_FACTOR, STAFF_SPLASH_RADIUS, isStaff, rollBoltSkillProcs, staffSkillBossDamageMultiplier,
-  weaponAttackInterval,
+  STAFF_BOLT_DAMAGE_FACTOR, STAFF_BOLT_SPEED_FACTOR, STAFF_SPLASH_RADIUS, isStaff, rollBoltSkillProcs, staffSkillBossDamageMultiplier,
+  weaponAttackInterval, weaponHitFactor,
 } from "../../../shared/staff-skills";
 import { masteryBlastScale, masteryInPlay, rollWithProficiency, type MasteryInPlay, type MasteryPoints } from "../../../shared/weapon-mastery";
 import { createMasteryTechniqueRuntime } from "./mastery-technique-runtime";
@@ -35,8 +35,9 @@ import { staffBoltColor } from "../staff-look";
 import { createCardCombat } from "./card-combat";
 import { NO_CARDS, cardStatGainFactor, cardValue, type CardTotals } from "../../../shared/card-effects";
 import { bowSkillsWithCards } from "../../../shared/card-bounds";
-import { isSkillBow } from "../../../shared/bow-skills";
-import { addPlayerBaseMaxHealth } from "./player-health";
+import { isBow, isSkillBow } from "../../../shared/bow-skills";
+import { ARROW_KINDS, PIERCING_ARROW_EXTRA_TARGETS, arrowHitMultiplier, type ArrowId } from "../../../shared/arrows";
+import { addPlayerBaseMaxHealth, healPlayer } from "./player-health";
 import {
   absoluteAttackTimestamps,
   attackAnimationClockAt,
@@ -171,8 +172,12 @@ export function createPlayerCombatController(options: {
   hitGeneratedBoss?: (enemy: EnemyState, damage: number, critical: boolean, reflected?: boolean) => boolean;
   /** The Reflect Only prestige challenge: only reflected hits deal damage. */
   reflectOnly?: () => boolean;
+  /** The crafted arrow a bow shoots now (nocked and held), and one fired: spent from the stack (arrow-service.ts). */
+  arrowInPlay?: () => ArrowId | null;
+  onArrowShot?: (arrowId: ArrowId) => void;
   /** Every hit the player lands, after its multipliers: the DPS readout. */
-  onDamageDealt?: (amount: number, source: DamageSource) => void;
+  onDamageDealt?: (amount: number, source: DamageSource, target: EnemyState | BossTarget) => void;
+  onCombatTick?: () => void;
   spawnBurst: (x: number, y: number, color: string, count?: number, speed?: number) => void;
   spawnParticle: (x: number, y: number, vx: number, vy: number, life: number, maxLife: number, size: number, color: string) => void;
   spawnDamageNumber: (x: number, y: number, amount: number, critical?: boolean, damageTaken?: boolean, reflected?: boolean) => void;
@@ -241,7 +246,7 @@ export function createPlayerCombatController(options: {
     player, enemies, currentMapId: options.currentMapId, equippedWeapon: options.equippedWeapon,
     activeBoss: activeMapBoss, roll: weaponSkills, nowSeconds: options.nowSeconds, random,
     isDueling, onCombat: options.onCombat, effects: options.skillEffects, hit: applyPlayerHit,
-    extraWhirlwindTicks: techniques.whirlwindTicks, deflectReturn: techniques.deflectReturn,
+    extraWhirlwindTicks: techniques.whirlwindTicks, deflectReturn: techniques.deflectReturn, reach: () => attackRange(),
   });
   const staffSkills = createStaffSkillRuntime({
     player, enemies, currentMapId: options.currentMapId, equippedWeapon: options.equippedWeapon,
@@ -416,6 +421,10 @@ export function createPlayerCombatController(options: {
       // Volley raises a Split Shot arrow.
       projectile.damage = weaponDamage(critical) * (staff ? STAFF_BOLT_DAMAGE_FACTOR : 1) * (Math.random() < doubleStrikeChance() ? 2 : 1)
         * (splitShot ? techniques.splitShotFactor() : 1);
+      // A nocked arrow is spent a shot; Steel hits harder, Star's criticals harder (arrows.ts).
+      const ammo = !staff && isBow(weaponItem) ? options.arrowInPlay?.() ?? null : null;
+      projectile.ammo = ammo;
+      if (ammo) { options.onArrowShot?.(ammo); projectile.damage *= arrowHitMultiplier(ammo, critical); }
       projectile.critical = critical;
       projectile.hitLife = player.attackRange / speed * projectileLifeBonus;
       projectile.life = (player.attackRange + PLAYER_PROJECTILE_VISUAL_TAIL) / speed * projectileLifeBonus;
@@ -622,7 +631,7 @@ export function createPlayerCombatController(options: {
     incrementKills();
     techniques.kill();
     // Regular enemy kills only; bosses and duel opponents do not trigger healing. Second Wind cards add to the perk.
-    if (player.hp > 0) player.hp = Math.min(player.maxHp, player.hp + player.maxHp * ((options.prestigeSecondWind?.() ?? 0) + cardCombat.secondWind()));
+    healPlayer(player, player.maxHp * ((options.prestigeSecondWind?.() ?? 0) + cardCombat.secondWind()), "second-wind");
     cardCombat.onKill();
     const site = spawnSites[enemy.siteId];
     if (site) scheduleEnemyRespawn(site);
@@ -785,8 +794,8 @@ export function createPlayerCombatController(options: {
       damage *= cardCombat.hitMultiplier(target) * techniques.hitFactor(target, critical);
     }
     if ((target.isBoss || target.generatedBoss) && weaponHit) damage *= 1 + bossSlayer();
-    options.onDamageDealt?.(damage * (1 - iaidoShare), source);
-    if (iaidoShare > 0) options.onDamageDealt?.(damage * iaidoShare, "card-koi");
+    options.onDamageDealt?.(damage * (1 - iaidoShare), source, target);
+    if (iaidoShare > 0) options.onDamageDealt?.(damage * iaidoShare, "card-koi", target);
     // A reflected hit shows blue, so the player can see Reflect fire.
     if (!target.isBoss && !target.generatedBoss) spawnDamageNumber(target.x, target.y, damage, critical, false, reflected);
     target.hurt = .12;
@@ -836,6 +845,9 @@ export function createPlayerCombatController(options: {
     }
     // No spark on a hit: hits are too many to draw sparks for. Deaths keep their burst.
     applyPlayerHit(target, projectile.damage, critical, Math.atan2(projectile.vy, projectile.vx), 'bow-hit');
+    // Fire, Venom and Frost arrows on every hit, the arrow's own and any it pierces.
+    const effect = projectile.ammo ? ARROW_KINDS[projectile.ammo].effect : null;
+    if (effect === "burn" || effect === "poison" || effect === "chill") cardCombat.arrowHit(target, projectile.damage, effect);
     const procs = projectile.skills;
     if (!procs?.arrowStorm && !procs?.ricochet) return;
     projectile.skills = procs.piercingShot ? PIERCE_ONLY : null;
@@ -869,6 +881,7 @@ export function createPlayerCombatController(options: {
   }
 
   function updateProjectiles(dt: number) {
+    options.onCombatTick?.();
     const nowSeconds = options.nowSeconds();
     if (stormHits.length) landStormHits(nowSeconds);
     syncAttackTimeline(nowSeconds);
@@ -891,7 +904,8 @@ export function createPlayerCombatController(options: {
       if (projectile.hitLife !== undefined) projectile.hitLife -= projectileStepSeconds;
       projectile.trail -= projectileStepSeconds;
       // Piercing Shot carries the arrow on through regular enemies in its line.
-      while (hit && arrowPassesThrough(projectile.skills, hit.enemy, projectile.pierced?.size ?? 0)) {
+      while (hit && (arrowPassesThrough(projectile.skills, hit.enemy, projectile.pierced?.size ?? 0)
+        || projectile.ammo === "piercing_arrow" && !hit.enemy.isBoss && !hit.enemy.generatedBoss && (projectile.pierced?.size ?? 0) < PIERCING_ARROW_EXTRA_TARGETS)) {
         const pierceX = startX + (endX - startX) * hit.t, pierceY = startY + (endY - startY) * hit.t;
         arrowImpact(projectile, hit.enemy, pierceX, pierceY);
         (projectile.pierced ??= new Set()).add(hit.enemy);
@@ -933,11 +947,11 @@ export function createPlayerCombatController(options: {
 
   /** Weapon damage a second as the player stands, criticals averaged in: what Soul Dimension enemies are built against. */
   function expectedDps() {
-    const chance = Math.max(0, Math.min(1, researchCriticalChance()));
-    const projectiles = isMeleeWeapon(options.equippedWeapon()) ? 1 : Math.max(1, player.projectileCount ?? 1);
-    // A staff's slower, heavier casts, against one target (its bursts reach more, which this leaves out).
-    const staff = isStaff(options.equippedWeapon()) ? STAFF_DPS_FACTOR : 1;
-    return weaponDamage(false) * staff * (1 + chance * (researchCriticalDamageMultiplier() - 1)) * projectiles / Math.max(.05, player.attackRate);
+    const chance = Math.max(0, Math.min(1, researchCriticalChance())), weapon = options.equippedWeapon();
+    const projectiles = isMeleeWeapon(weapon) ? 1 : Math.max(1, player.projectileCount ?? 1);
+    // A staff's slower, heavier casts and a bow's quicker shots, against one target (a staff's bursts reach more, which this leaves out).
+    return weaponDamage(false) * weaponHitFactor(weapon) * (1 + chance * (researchCriticalDamageMultiplier() - 1)) * projectiles
+      / Math.max(.05, weaponAttackInterval(weapon, player.attackRate));
   }
 
   /** expectedDps with Double Strike and Arrow Storm in, against one enemy: what the Soul Defense Force is built against. */
